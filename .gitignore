@@ -1,0 +1,16 @@
+# Build outputs
+*.o
+*.exe
+*.out
+scheduler
+a.out
+
+# Visual Studio
+.vs/
+*.vcxproj*
+*.sln
+*.slnx
+Debug/
+Release/
+x64/
+ProjectSettings.json
