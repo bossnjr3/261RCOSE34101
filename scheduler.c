@@ -38,7 +38,7 @@ int random_int(int min, int max) {
 int sjf_compare(PROCESS* a, PROCESS* b) {
 	int a_time = a->burst_time - a->cpu_used; // 남은 CPU burst time 계산
 	int b_time = b->burst_time - b->cpu_used; // 남은 CPU burst time 계산
-	if (a != b) {
+	if (a_time != b_time) {
 		return a_time - b_time; // 남은 CPU burst time이 작은 순서대로 정렬
 	}
 	else {
@@ -90,6 +90,10 @@ void heap_push(PROCESS* HEAP[], int size, PROCESS* p);
 PROCESS* heap_pop(PROCESS* HEAP[], int size);
 void doFCFS(PROCESS *original_processes, int p_cnt);
 void doSJF(PROCESS* original_processes, int p_cnt);
+void doSJF_preemptive(PROCESS* original_processes, int p_cnt);
+
+void print_tick(int t, PROCESS* current, PROCESS* rqueue[], int tail, int head, PROCESS* wqueue[], int whead);
+void print_result(const char* name, PROCESS* working_processes, int p_cnt);
 
 
 int main(void) {
@@ -108,7 +112,8 @@ int main(void) {
 		original_processes[i - 1] = p; // 원본 프로세스 배열에 저장
 	}		
 	doFCFS(original_processes, p_cnt); // FCFS 스케줄링 시뮬레이션 실행
-	doSJF(original_processes, p_cnt); // SJF 스케줄링 시뮬레이션 실행)
+	doSJF(original_processes, p_cnt); // SJF 스케줄링 시뮬레이션 실행
+	doSJF_preemptive(original_processes, p_cnt); // SJF Preemptive 스케줄링 시뮬레이션 실행
 
 	return 0;
 }
@@ -120,6 +125,7 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
+	int tail = 0; // READY 큐에서 프로세스를 제거할 위치
 	int whead = 0; // WAITING 큐에 새 프로세스를 추가할 위치
 	int now_cheking = 0; // 현재 실행 중인 프로세스의 인덱스
 	int max_time = 1500; // 시뮬레이션 최대 시간
@@ -134,6 +140,7 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 				head = (head + 1) % (MAX_PROCESSES + 1);
 			}
 		}
+		// WAITING 큐 처리
 		for (j = 0; j != whead; j++) {
 			PROCESS* waiting_process = wqueue[j];
 			waiting_process->io_burst_times[waiting_process->current_io_idx]--;
@@ -147,13 +154,11 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
 			}
 		}
-		if (current_process == NULL) {
-
-			current_process = heap_pop(rqueue, head);
-			if (current_process != NULL) {
-				head--;
-				current_process->state = RUNNING;
-			}
+		// READY 큐에서 프로세스 선택 (FCFS)
+		if (current_process == NULL && head != tail) {
+			current_process = rqueue[tail];
+			tail = (tail + 1) % (MAX_PROCESSES + 1);
+			current_process->state = RUNNING;
 		}
 		// RUNNING 처리
 		if (current_process != NULL) {
@@ -181,37 +186,9 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 			}
 		}
 
-		// 매 tick 상태 출력
-		printf("t=%3d | ", i);
-		if (current_process != NULL)
-			printf("CPU: P%d (cpu_used=%d) | ", current_process->pid, current_process->cpu_used);
-		else
-			printf("CPU: IDLE            | ");
-
-		printf("READY: ");
-		int r = 0;
-		for (r = 0; r < head; r++) {
-			printf("P%d ", rqueue[r]->pid);
-		}
-
-		printf("| WAIT: ");
-		for (j = 0; j < whead; j++)
-			printf("P%d ", wqueue[j]->pid);
-
-		printf("\n");
+		print_tick(i, current_process, rqueue, tail, head, wqueue, whead); // 매 tick 상태 출력
 	}
-	printf("\n=== FCFS result ===\n");
-	int total_wait = 0, total_turnaround = 0;
-	for (j = 0; j < p_cnt; j++) {
-		int turnaround = working_processes[j].completion_time - working_processes[j].arrival_time;
-		int waiting = turnaround - working_processes[j].burst_time - working_processes[j].io_total;
-		total_wait += waiting;
-		total_turnaround += turnaround;
-		printf("P%d: completion=%d, turnaround=%d, waiting=%d\n",
-			working_processes[j].pid, working_processes[j].completion_time, turnaround, waiting);
-	}
-	printf("Average Waiting Time: %.2f\n", (double)total_wait / p_cnt);
-	printf("Average Turnaround Time: %.2f\n", (double)total_turnaround / p_cnt);
+	print_result("FCFS", working_processes, p_cnt); // FCFS 결과 출력
 }
 
 void doSJF(PROCESS* original_processes, int p_cnt) {
@@ -235,6 +212,7 @@ void doSJF(PROCESS* original_processes, int p_cnt) {
 				head++;
 			}
 		}
+		// WAITING 큐 처리
 		for (j = 0; j != whead; j++) {
 			PROCESS* waiting_process = wqueue[j];
 			waiting_process->io_burst_times[waiting_process->current_io_idx]--;
@@ -248,6 +226,7 @@ void doSJF(PROCESS* original_processes, int p_cnt) {
 				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
 			}
 		}
+		// READY 큐에서 프로세스 선택 (SJF)
 		if (current_process == NULL) {
 			current_process = heap_pop(rqueue, head);
 			if (current_process != NULL) {
@@ -281,38 +260,98 @@ void doSJF(PROCESS* original_processes, int p_cnt) {
 			}
 		}
 
-		// 매 tick 상태 출력
-		printf("t=%3d | ", i);
-		if (current_process != NULL)
-			printf("CPU: P%d (cpu_used=%d) | ", current_process->pid, current_process->cpu_used);
-		else
-			printf("CPU: IDLE            | ");
+		print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
+	}
+	print_result("SJF", working_processes, p_cnt); // SJF 결과 출력
+}
 
-		printf("READY: ");
-		int r = 0;
-		while (r != head) {
-			printf("P%d ", rqueue[r]->pid);
-			r = (r + 1) % (MAX_PROCESSES + 1);
+
+void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
+	PROCESS working_processes[MAX_PROCESSES];
+	int i, j;
+	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
+	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
+	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
+	int head = 0; // 큐에 새 프로세스를 추가할 위치
+	int whead = 0; // WAITING 큐에 새 프로세스를 추가할 위치
+	int now_cheking = 0; // 현재 실행 중인 프로세스의 인덱스
+	int max_time = 1500; // 시뮬레이션 최대 시간
+	int done = 0;
+	PROCESS* current_process = NULL;
+	PROCESS* compare_process = NULL;
+	for (i = 0; i < max_time; i++) {
+		// 시뮬레이션 시간 단위마다 프로세스 상태 업데이트 및 스케줄링 로직 구현
+		for (j = 0; j < p_cnt; j++) {
+			if (working_processes[j].arrival_time == i && working_processes[j].state == NEW) {
+				working_processes[j].state = READY;
+				heap_push(rqueue, head, &working_processes[j]);
+				head++;
+			}
+		}
+		// WAITING 큐 처리
+		for (j = 0; j != whead; j++) {
+			PROCESS* waiting_process = wqueue[j];
+			waiting_process->io_burst_times[waiting_process->current_io_idx]--;
+			if (waiting_process->io_burst_times[waiting_process->current_io_idx] == 0) {
+				waiting_process->state = READY;
+				heap_push(rqueue, head, waiting_process);
+				waiting_process->current_io_idx++;
+				head++;
+				wqueue[j] = wqueue[whead - 1]; // WAITING 큐에서 제거]
+				whead--;
+				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
+			}
+		}
+		// READY 큐에서 프로세스 선택 (SJF Preemptive)
+		if (current_process == NULL) {
+			current_process = heap_pop(rqueue, head);
+			if (current_process != NULL) {
+				head--;
+				current_process->state = RUNNING;
+			}
+		}
+		// 현재 실행 중인 프로세스와 READY 큐의 가장 짧은 프로세스 비교
+		else {
+			compare_process = rqueue[0]; // READY 큐에서 가장 짧은 프로세스 확인
+			if (head > 0 && sjf_compare(current_process, compare_process) > 0) {
+					compare_process = heap_pop(rqueue, head); // READY 큐에서 가장 짧은 프로세스 꺼내기
+					head--;
+					current_process->state = READY;
+					heap_push(rqueue, head, current_process);
+					head++;
+					current_process = compare_process;
+					current_process->state = RUNNING;
+			}
+		}
+		// RUNNING 처리
+		if (current_process != NULL) {
+			// I/O 요청
+			// I/O 요청 시점은 context switch 비용으로 CPU를 사용하지 않는다고 가정
+			if (current_process->current_io_idx < current_process->io_count &&
+				current_process->cpu_used >= current_process->io_request_times[current_process->current_io_idx]) {
+				current_process->state = WAITING;
+				wqueue[whead] = current_process;
+				whead = (whead + 1) % (MAX_PROCESSES + 1);
+				current_process = NULL;
+			}
+			// 종료
+			else {
+				current_process->cpu_used++;
+				if (current_process->cpu_used == current_process->burst_time) {
+					current_process->state = TERMINATED;
+					current_process->completion_time = i;
+					current_process = NULL;
+					done++;
+					if (done == p_cnt) {
+						break; // 모든 프로세스가 종료되면 시뮬레이션 종료
+					}
+				}
+			}
 		}
 
-		printf("| WAIT: ");
-		for (j = 0; j < whead; j++)
-			printf("P%d ", wqueue[j]->pid);
-
-		printf("\n");
+		print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
 	}
-	printf("\n=== SJF result ===\n");
-	int total_wait = 0, total_turnaround = 0;
-	for (j = 0; j < p_cnt; j++) {
-		int turnaround = working_processes[j].completion_time - working_processes[j].arrival_time;
-		int waiting = turnaround - working_processes[j].burst_time - working_processes[j].io_total;
-		total_wait += waiting;
-		total_turnaround += turnaround;
-		printf("P%d: completion=%d, turnaround=%d, waiting=%d\n",
-			working_processes[j].pid, working_processes[j].completion_time, turnaround, waiting);
-	}
-	printf("Average Waiting Time: %.2f\n", (double)total_wait / p_cnt);
-	printf("Average Turnaround Time: %.2f\n", (double)total_turnaround / p_cnt);
+	print_result("SJF Preemptive", working_processes, p_cnt); // SJF Preemptive 결과 출력
 }
 
 
@@ -338,6 +377,7 @@ PROCESS* heap_pop(PROCESS* HEAP[], int size) {
 	if (size == 0) return NULL;
 	PROCESS* top = HEAP[0];
 	HEAP[0] = HEAP[size - 1];
+	if(size != 1) HEAP[size - 1] = NULL;
 	int i = 0;
 	int left, right, smallest;
 	size--;
@@ -362,4 +402,42 @@ PROCESS* heap_pop(PROCESS* HEAP[], int size) {
 		}
 	}
 	return top;
+}
+
+
+void print_tick(int t, PROCESS* current, PROCESS* rqueue[], int tail, int head, PROCESS* wqueue[], int whead) {
+	printf("t=%3d | ", t);
+	if (current != NULL)
+		printf("CPU: P%d (cpu_used=%d) | ", current->pid, current->cpu_used);
+	else
+		printf("CPU: IDLE            | ");
+
+	printf("READY: ");
+	int r = tail;
+	while (tail != head) {
+		printf("P%d ", rqueue[tail]->pid);
+		tail = (tail + 1) % (MAX_PROCESSES + 1);
+	}
+	int j;
+	printf("| WAIT: ");
+	for (j = 0; j < whead; j++)
+		printf("P%d ", wqueue[j]->pid);
+
+	printf("\n");
+}
+
+void print_result(const char* name, PROCESS* working_processes, int p_cnt) {
+	printf("\n=== %s result ===\n", name);
+	int total_wait = 0, total_turnaround = 0;
+	int j, turnaround, waiting;
+	for (j = 0; j < p_cnt; j++) {
+		turnaround = working_processes[j].completion_time - working_processes[j].arrival_time;
+		waiting = turnaround - working_processes[j].burst_time - working_processes[j].io_total;
+		total_wait += waiting;
+		total_turnaround += turnaround;
+		printf("P%d: completion=%d, turnaround=%d, waiting=%d\n",
+			working_processes[j].pid, working_processes[j].completion_time, turnaround, waiting);
+	}
+	printf("Average Waiting Time: %.2f\n", (double)total_wait / p_cnt);
+	printf("Average Turnaround Time: %.2f\n", (double)total_turnaround / p_cnt);
 }
