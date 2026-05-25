@@ -168,7 +168,7 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 				current_process->cpu_used >= current_process->io_request_times[current_process->current_io_idx]) {
 				current_process->state = WAITING;
 				wqueue[whead] = current_process;
-				whead = (whead + 1) % (MAX_PROCESSES + 1);
+				whead++;
 				current_process = NULL;
 			}
 			// 종료
@@ -176,7 +176,7 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 				current_process->cpu_used++;
 				if (current_process->cpu_used == current_process->burst_time) {
 					current_process->state = TERMINATED;
-					current_process->completion_time = i;
+					current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
 					current_process = NULL;
 					done++;
 					if (done == p_cnt) {
@@ -242,7 +242,7 @@ void doSJF(PROCESS* original_processes, int p_cnt) {
 				current_process->cpu_used >= current_process->io_request_times[current_process->current_io_idx]) {
 				current_process->state = WAITING;
 				wqueue[whead] = current_process;
-				whead = (whead + 1) % (MAX_PROCESSES + 1);
+				whead++;
 				current_process = NULL;
 			}
 			// 종료
@@ -250,7 +250,7 @@ void doSJF(PROCESS* original_processes, int p_cnt) {
 				current_process->cpu_used++;
 				if (current_process->cpu_used == current_process->burst_time) {
 					current_process->state = TERMINATED;
-					current_process->completion_time = i;
+					current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
 					current_process = NULL;
 					done++;
 					if (done == p_cnt) {
@@ -312,15 +312,15 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
 		}
 		// 현재 실행 중인 프로세스와 READY 큐의 가장 짧은 프로세스 비교
 		else {
-			compare_process = rqueue[0]; // READY 큐에서 가장 짧은 프로세스 확인
-			if (head > 0 && sjf_compare(current_process, compare_process) > 0) {
-					compare_process = heap_pop(rqueue, head); // READY 큐에서 가장 짧은 프로세스 꺼내기
-					head--;
-					current_process->state = READY;
-					heap_push(rqueue, head, current_process);
-					head++;
-					current_process = compare_process;
-					current_process->state = RUNNING;
+			if (head > 0 && sjf_compare(current_process, rqueue[0]) > 0) {
+				compare_process = rqueue[0]; // READY 큐에서 가장 짧은 프로세스 확인
+				compare_process = heap_pop(rqueue, head); // READY 큐에서 가장 짧은 프로세스 꺼내기
+				head--;
+				current_process->state = READY;
+				heap_push(rqueue, head, current_process);
+				head++;
+				current_process = compare_process;
+				current_process->state = RUNNING;
 			}
 		}
 		// RUNNING 처리
@@ -331,7 +331,7 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
 				current_process->cpu_used >= current_process->io_request_times[current_process->current_io_idx]) {
 				current_process->state = WAITING;
 				wqueue[whead] = current_process;
-				whead = (whead + 1) % (MAX_PROCESSES + 1);
+				whead++;
 				current_process = NULL;
 			}
 			// 종료
@@ -339,7 +339,7 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
 				current_process->cpu_used++;
 				if (current_process->cpu_used == current_process->burst_time) {
 					current_process->state = TERMINATED;
-					current_process->completion_time = i;
+					current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
 					current_process = NULL;
 					done++;
 					if (done == p_cnt) {
@@ -413,7 +413,6 @@ void print_tick(int t, PROCESS* current, PROCESS* rqueue[], int tail, int head, 
 		printf("CPU: IDLE            | ");
 
 	printf("READY: ");
-	int r = tail;
 	while (tail != head) {
 		printf("P%d ", rqueue[tail]->pid);
 		tail = (tail + 1) % (MAX_PROCESSES + 1);
