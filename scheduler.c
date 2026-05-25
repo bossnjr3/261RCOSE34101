@@ -59,12 +59,24 @@ PROCESS create_process(int pid) {
 		p.io_count = max_io_possible;
 	}
 	if (p.io_count < 0) p.io_count = 0;   // burst=1이면 max_io_possible=0
-	for (int i = 0; i < p.io_count; i++) {
-		p.io_request_times[i] = random_int(1, p.burst_time - 1); // I/O 요청이 발생하는 시간을 burst time 내에서 랜덤하게 설정
-		p.io_burst_times[i] = random_int(1, 5); // 각 I/O 요청에 필요한 시간을 1에서 5 사이로 랜덤하게 설정
-		p.io_total += p.io_burst_times[i]; // 총 I/O 시간을 누적
-	}
+	// 1 ~ burst-1 후보를 셔플해서 중복 없이 io_count개 뽑기
+	int candidates[MAX_PROCESSES];   // burst가 최대 20이라 충분
+	int cnt = 0;
+	int k, r, tmp;
 	int i, j;
+	for (k = 1; k < p.burst_time; k++) candidates[cnt++] = k;
+	// Fisher-Yates 셔플
+	for (k = cnt - 1; k > 0; k--) {
+		r = rand() % (k + 1);
+		tmp = candidates[k];
+		candidates[k] = candidates[r];
+		candidates[r] = tmp;
+	}
+	for (k = 0; k < p.io_count; k++) {
+		p.io_request_times[k] = candidates[k];   // I/O 요청이 발생하는 시간을 중복 없이 burst time 내에서 랜덤하게 설정
+		p.io_burst_times[k] = random_int(1, 5); // 각 I/O 요청에 필요한 시간을 1에서 5 사이로 랜덤하게 설정
+		p.io_total += p.io_burst_times[k]; // 총 I/O 시간을 누적
+	}
 	// io_request_times, io_burst_times 같이 정렬 (버블 정렬)
 	for (i = 0; i < p.io_count - 1; i++) {
 		for (j = 0; j < p.io_count - 1 - i; j++) {
@@ -92,6 +104,7 @@ void doFCFS(PROCESS *original_processes, int p_cnt);
 void doSJF(PROCESS* original_processes, int p_cnt);
 void doSJF_preemptive(PROCESS* original_processes, int p_cnt);
 
+void print_gantt(int gantt[], int total);
 void print_tick(int t, PROCESS* current, PROCESS* rqueue[], int tail, int head, PROCESS* wqueue[], int whead);
 void print_result(const char* name, PROCESS* working_processes, int p_cnt);
 
@@ -124,6 +137,7 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
+	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
 	int tail = 0; // READY 큐에서 프로세스를 제거할 위치
 	int whead = 0; // WAITING 큐에 새 프로세스를 추가할 위치
@@ -146,12 +160,7 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 			waiting_process->io_burst_times[waiting_process->current_io_idx]--;
 			if (waiting_process->io_burst_times[waiting_process->current_io_idx] == 0) {
 				waiting_process->state = READY;
-				rqueue[head] = waiting_process;
 				waiting_process->current_io_idx++;
-				head = (head + 1) % (MAX_PROCESSES + 1);
-				wqueue[j] = wqueue[whead - 1]; // WAITING 큐에서 제거]
-				whead--;
-				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
 			}
 		}
 		// READY 큐에서 프로세스 선택 (FCFS)
@@ -162,39 +171,53 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 		}
 		// RUNNING 처리
 		if (current_process != NULL) {
+			current_process->cpu_used++;
 			// I/O 요청
-			// I/O 요청 시점은 context switch 비용으로 CPU를 사용하지 않는다고 가정
-			if (current_process->current_io_idx < current_process->io_count &&
+			// I/O 요청 시점의 context switch 비용이 발생하지 않는다고 가정
+			if (current_process->cpu_used == current_process->burst_time) {
+				current_process->state = TERMINATED;
+				current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
+				done++;
+			} else if (current_process->current_io_idx < current_process->io_count &&
 				current_process->cpu_used >= current_process->io_request_times[current_process->current_io_idx]) {
 				current_process->state = WAITING;
 				wqueue[whead] = current_process;
 				whead++;
-				current_process = NULL;
-			}
-			// 종료
-			else {
-				current_process->cpu_used++;
-				if (current_process->cpu_used == current_process->burst_time) {
-					current_process->state = TERMINATED;
-					current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
-					current_process = NULL;
-					done++;
-					if (done == p_cnt) {
-						break; // 모든 프로세스가 종료되면 시뮬레이션 종료
-					}
-				}
 			}
 		}
-
-		print_tick(i, current_process, rqueue, tail, head, wqueue, whead); // 매 tick 상태 출력
+		for (j = 0; j != whead; j++) {
+			PROCESS* waiting_process = wqueue[j];
+			if (waiting_process->state == READY) {
+				rqueue[head] = waiting_process;
+				head = (head + 1) % (MAX_PROCESSES + 1);
+				wqueue[j] = wqueue[whead - 1]; // WAITING 큐에서 제거
+				whead--;
+				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
+			}
+		}
+		if (current_process != NULL) {
+			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+		}
+		else {
+			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+		}
+		//print_tick(i, current_process, rqueue, tail, head, wqueue, whead); // 매 tick 상태 출력
+		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING)) {
+			current_process = NULL;
+		}
+		if (done == p_cnt) {
+			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
+		}
 	}
 	print_result("FCFS", working_processes, p_cnt); // FCFS 결과 출력
+	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
 }
 
 void doSJF(PROCESS* original_processes, int p_cnt) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
+	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
@@ -218,12 +241,7 @@ void doSJF(PROCESS* original_processes, int p_cnt) {
 			waiting_process->io_burst_times[waiting_process->current_io_idx]--;
 			if (waiting_process->io_burst_times[waiting_process->current_io_idx] == 0) {
 				waiting_process->state = READY;
-				heap_push(rqueue, head, waiting_process);
 				waiting_process->current_io_idx++;
-				head++;
-				wqueue[j] = wqueue[whead - 1]; // WAITING 큐에서 제거]
-				whead--;
-				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
 			}
 		}
 		// READY 큐에서 프로세스 선택 (SJF)
@@ -236,33 +254,47 @@ void doSJF(PROCESS* original_processes, int p_cnt) {
 		}
 		// RUNNING 처리
 		if (current_process != NULL) {
+			current_process->cpu_used++;
 			// I/O 요청
-			// I/O 요청 시점은 context switch 비용으로 CPU를 사용하지 않는다고 가정
-			if (current_process->current_io_idx < current_process->io_count &&
+			// I/O 요청 시점의 context switch 비용이 발생하지 않는다고 가정
+			if (current_process->cpu_used == current_process->burst_time) {
+				current_process->state = TERMINATED;
+				current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
+				done++;
+			}
+			else if (current_process->current_io_idx < current_process->io_count &&
 				current_process->cpu_used >= current_process->io_request_times[current_process->current_io_idx]) {
 				current_process->state = WAITING;
 				wqueue[whead] = current_process;
 				whead++;
-				current_process = NULL;
-			}
-			// 종료
-			else {
-				current_process->cpu_used++;
-				if (current_process->cpu_used == current_process->burst_time) {
-					current_process->state = TERMINATED;
-					current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
-					current_process = NULL;
-					done++;
-					if (done == p_cnt) {
-						break; // 모든 프로세스가 종료되면 시뮬레이션 종료
-					}
-				}
 			}
 		}
-
-		print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
+		for (j = 0; j != whead; j++) {
+			PROCESS* waiting_process = wqueue[j];
+			if (waiting_process->state == READY) {
+				heap_push(rqueue, head, waiting_process);
+				head++;
+				wqueue[j] = wqueue[whead - 1]; // WAITING 큐에서 제거]
+				whead--;
+				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
+			}
+		}
+		if (current_process != NULL) {
+			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+		}
+		else {
+			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+		}
+		//print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
+		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING)) {
+			current_process = NULL;
+		}
+		if (done == p_cnt) {
+			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
+		}
 	}
 	print_result("SJF", working_processes, p_cnt); // SJF 결과 출력
+	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
 }
 
 
@@ -270,6 +302,7 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
+	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
@@ -294,12 +327,7 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
 			waiting_process->io_burst_times[waiting_process->current_io_idx]--;
 			if (waiting_process->io_burst_times[waiting_process->current_io_idx] == 0) {
 				waiting_process->state = READY;
-				heap_push(rqueue, head, waiting_process);
 				waiting_process->current_io_idx++;
-				head++;
-				wqueue[j] = wqueue[whead - 1]; // WAITING 큐에서 제거]
-				whead--;
-				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
 			}
 		}
 		// READY 큐에서 프로세스 선택 (SJF Preemptive)
@@ -325,33 +353,47 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
 		}
 		// RUNNING 처리
 		if (current_process != NULL) {
+			current_process->cpu_used++;
 			// I/O 요청
-			// I/O 요청 시점은 context switch 비용으로 CPU를 사용하지 않는다고 가정
-			if (current_process->current_io_idx < current_process->io_count &&
+			// I/O 요청 시점의 context switch 비용이 발생하지 않는다고 가정
+			if (current_process->cpu_used == current_process->burst_time) {
+				current_process->state = TERMINATED;
+				current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
+				done++;
+			}
+			else if (current_process->current_io_idx < current_process->io_count &&
 				current_process->cpu_used >= current_process->io_request_times[current_process->current_io_idx]) {
 				current_process->state = WAITING;
 				wqueue[whead] = current_process;
 				whead++;
-				current_process = NULL;
-			}
-			// 종료
-			else {
-				current_process->cpu_used++;
-				if (current_process->cpu_used == current_process->burst_time) {
-					current_process->state = TERMINATED;
-					current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
-					current_process = NULL;
-					done++;
-					if (done == p_cnt) {
-						break; // 모든 프로세스가 종료되면 시뮬레이션 종료
-					}
-				}
 			}
 		}
-
-		print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
+		for (j = 0; j != whead; j++) {
+			PROCESS* waiting_process = wqueue[j];
+			if (waiting_process->state == READY) {
+				heap_push(rqueue, head, waiting_process);
+				head++;
+				wqueue[j] = wqueue[whead - 1]; // WAITING 큐에서 제거]
+				whead--;
+				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
+			}
+		}
+		if (current_process != NULL) {
+			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+		}
+		else {
+			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+		}
+		//print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
+		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING)) {
+			current_process = NULL;
+		}
+		if (done == p_cnt) {
+			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
+		}
 	}
 	print_result("SJF Preemptive", working_processes, p_cnt); // SJF Preemptive 결과 출력
+	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
 }
 
 
@@ -404,6 +446,21 @@ PROCESS* heap_pop(PROCESS* HEAP[], int size) {
 	return top;
 }
 
+void print_gantt(int gantt[], int total) {
+	printf("=== Gantt Chart ===\n");
+	int t = 0;
+	int pid, start;
+	while (t < total) {
+		pid = gantt[t];
+		start = t;
+		while (t < total && gantt[t] == pid) t++;
+		if (pid == 0)
+			printf("[IDLE %d~%d] ", start, t);
+		else
+			printf("[P%d %d~%d] ", pid, start, t);
+	}
+	printf("\n");
+}
 
 void print_tick(int t, PROCESS* current, PROCESS* rqueue[], int tail, int head, PROCESS* wqueue[], int whead) {
 	printf("t=%3d | ", t);
