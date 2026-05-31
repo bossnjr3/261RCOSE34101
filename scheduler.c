@@ -114,6 +114,7 @@ void doSJF(PROCESS* original_processes, int p_cnt);
 void doSJF_preemptive(PROCESS* original_processes, int p_cnt);
 void doPriority(PROCESS* original_processes, int p_cnt);
 void doPriority_preemptive(PROCESS* original_processes, int p_cnt);
+void doRR(PROCESS* original_processes, int p_cnt, int time_quantum);
 
 void print_gantt(int gantt[], int total);
 void print_tick(int t, PROCESS* current, PROCESS* rqueue[], int tail, int head, PROCESS* wqueue[], int whead);
@@ -142,6 +143,7 @@ int main(void) {
 	doSJF_preemptive(original_processes, p_cnt); // SJF Preemptive 스케줄링 시뮬레이션 실행
 	doPriority(original_processes, p_cnt); // Priority 스케줄링 시뮬레이션 실행
 	doPriority_preemptive(original_processes, p_cnt); // Priority Preemptive 스케줄링 시뮬레이션 실행
+	doRR(original_processes, p_cnt, 4); // RR 스케줄링 시뮬레이션 실행
 
 	return 0;
 }
@@ -587,6 +589,97 @@ void doPriority_preemptive(PROCESS* original_processes, int p_cnt) {
 	print_result("Priority Preemptive", working_processes, p_cnt); // Priority Preemptive 결과 출력
 	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
 }
+
+
+void doRR(PROCESS* original_processes, int p_cnt, int time_quantum) {
+	PROCESS working_processes[MAX_PROCESSES];
+	int i, j;
+	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
+	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
+	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
+	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
+	int head = 0; // 큐에 새 프로세스를 추가할 위치
+	int tail = 0; // READY 큐에서 프로세스를 제거할 위치
+	int whead = 0; // WAITING 큐에 새 프로세스를 추가할 위치
+	int max_time = 1500; // 시뮬레이션 최대 시간
+	int now_time = 0; // 현재 사용한 시간 퀀텀
+	int done = 0;
+	PROCESS* current_process = NULL;
+	for (i = 0; i < max_time; i++) {
+		// 시뮬레이션 시간 단위마다 프로세스 상태 업데이트 및 스케줄링 로직 구현
+		for (j = 0; j < p_cnt; j++) {
+			if (working_processes[j].arrival_time == i && working_processes[j].state == NEW) {
+				working_processes[j].state = READY;
+				rqueue[head] = &working_processes[j];
+				head = (head + 1) % (MAX_PROCESSES + 1);
+			}
+		}
+		// WAITING 큐 처리
+		for (j = 0; j != whead; j++) {
+			PROCESS* waiting_process = wqueue[j];
+			waiting_process->io_burst_times[waiting_process->current_io_idx]--;
+			if (waiting_process->io_burst_times[waiting_process->current_io_idx] == 0) {
+				waiting_process->state = READY;
+				waiting_process->current_io_idx++;
+			}
+		}
+		// READY 큐에서 프로세스 선택 (FCFS)
+		if (current_process == NULL && head != tail) {
+			current_process = rqueue[tail];
+			tail = (tail + 1) % (MAX_PROCESSES + 1);
+			current_process->state = RUNNING;
+			now_time = 0; // 새로운 프로세스가 실행되면 시간 퀀텀 초기화
+		}
+		// RUNNING 처리
+		if (current_process != NULL) {
+			current_process->cpu_used++;
+			now_time++;
+			// I/O 요청
+			// I/O 요청 시점의 context switch 비용이 발생하지 않는다고 가정
+			if (current_process->cpu_used == current_process->burst_time) {
+				current_process->state = TERMINATED;
+				current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
+				done++;
+			}
+			else if (current_process->current_io_idx < current_process->io_count &&
+				current_process->cpu_used >= current_process->io_request_times[current_process->current_io_idx]) {
+				current_process->state = WAITING;
+				wqueue[whead] = current_process;
+				whead++;
+			} else if (now_time == time_quantum) { // 시간 퀀텀 도달 시
+				current_process->state = READY;
+				rqueue[head] = current_process;
+				head = (head + 1) % (MAX_PROCESSES + 1);
+			}
+		}
+		for (j = 0; j != whead; j++) {
+			PROCESS* waiting_process = wqueue[j];
+			if (waiting_process->state == READY) {
+				rqueue[head] = waiting_process;
+				head = (head + 1) % (MAX_PROCESSES + 1);
+				wqueue[j] = wqueue[whead - 1]; // WAITING 큐에서 제거
+				whead--;
+				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
+			}
+		}
+		if (current_process != NULL) {
+			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+		}
+		else {
+			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+		}
+		//print_tick(i, current_process, rqueue, tail, head, wqueue, whead); // 매 tick 상태 출력
+		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING || current_process->state == READY)) {
+			current_process = NULL;
+		}
+		if (done == p_cnt) {
+			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
+		}
+	}
+	print_result("RR", working_processes, p_cnt); // RR 결과 출력
+	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
+}
+
 
 
 
