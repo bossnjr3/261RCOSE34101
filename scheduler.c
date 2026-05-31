@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -128,15 +129,15 @@ void doPriority(PROCESS* original_processes, int p_cnt, RESULT *result);
 void doPriority_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result);
 void doRR(PROCESS* original_processes, int p_cnt, int time_quantum, RESULT *result);
 
-void print_gantt(int gantt[], int total);
-void print_tick(int t, PROCESS* current, PROCESS* rqueue[], int tail, int head, PROCESS* wqueue[], int whead);
-void print_result(const char* name, PROCESS* working_processes, int p_cnt);
-
+void print_comparison(RESULT results[], int count);
+void print_gantt(RESULT* result);
+void print_gantt_r(RESULT* result);
 
 int main(void) {
 	srand((unsigned int)time(NULL)); // 랜덤 시드 초기화
 	int p_cnt = random_int(3, MAX_PROCESSES); // 생성할 프로세스 수를 3에서 MAX_PROCESSES 사이로 랜덤하게 설정
-	int i, j;
+	int i, j, v, g;
+	int time_quantum;
 	PROCESS original_processes[MAX_PROCESSES];
 	for (i = 1; i <= p_cnt; i++) {
 		PROCESS p = create_process(i); // 프로세스 생성
@@ -155,52 +156,106 @@ int main(void) {
 
 	int what = -1;
 	while (what != 0) {
-		printf("\nSelect scheduling algorithm to simulate:\n");
-		printf("1. FCFS\n");
-		printf("2. SJF\n");
-		printf("3. SJF (Preemptive)\n");
-		printf("4. Priority\n");
-		printf("5. Priority (Preemptive)\n");
-		printf("6. RR\n");
-		printf("7. Run All\n");
+		printf("\nMenu:\n");
+		printf("1. Run Simulation\n");
+		printf("2. View Results\n");
 		printf("0. Exit\n");
-		printf("Enter your choice: ");
 		scanf("%d", &what);
-		switch (what) {
-			case 1:
-				doFCFS(original_processes, p_cnt, &results[0]);
-				break;
-			case 2:
-				doSJF(original_processes, p_cnt, &results[1]);
-				break;
-			case 3:
-				doSJF_preemptive(original_processes, p_cnt, &results[2]);
-				break;
-			case 4:
-				doPriority(original_processes, p_cnt, &results[3]);
-				break;
-			case 5:
-				doPriority_preemptive(original_processes, p_cnt, &results[4]);
-				break;
-			case 6:
-				doRR(original_processes, p_cnt, 4, &results[5]);
-				break;
-			case 7:
-				doFCFS(original_processes, p_cnt, &results[0]);
-				doSJF(original_processes, p_cnt, &results[1]);
-				doSJF_preemptive(original_processes, p_cnt, &results[2]);
-				doPriority(original_processes, p_cnt, &results[3]);
-				doPriority_preemptive(original_processes, p_cnt, &results[4]);
-				doRR(original_processes, p_cnt, 4, &results[5]);
-				break;
-			case 0:
-				printf("Exiting...\n");
-				break;
-			default:
-				printf("Invalid choice. Please try again.\n");
-		
-		}
+		if (what == 1) {
+			while (what != 8 && what != 7) {
+				printf("\nSelect scheduling algorithm to simulate:\n");
+				printf("1. FCFS\n");
+				printf("2. SJF\n");
+				printf("3. SJF (Preemptive)\n");
+				printf("4. Priority\n");
+				printf("5. Priority (Preemptive)\n");
+				printf("6. RR\n");
+				printf("7. Run All\n");
+				printf("8. Back to Main Menu\n");
+				printf("Enter your choice: ");
+				scanf("%d", &what);
+				switch (what) {
+				case 1:
+					doFCFS(original_processes, p_cnt, &results[0]);
+					break;
+				case 2:
+					doSJF(original_processes, p_cnt, &results[1]);
+					break;
+				case 3:
+					doSJF_preemptive(original_processes, p_cnt, &results[2]);
+					break;
+				case 4:
+					doPriority(original_processes, p_cnt, &results[3]);
+					break;
+				case 5:
+					doPriority_preemptive(original_processes, p_cnt, &results[4]);
+					break;
+				case 6:
+					printf("Enter time quantum for RR: ");
+					scanf("%d", &time_quantum);
+					if (time_quantum <= 0) {
+						printf("Invalid time quantum. Using default value %d.\n", DEFAULT_QUANTUM);
+						time_quantum = DEFAULT_QUANTUM;
+					}
+					doRR(original_processes, p_cnt, time_quantum, &results[5]);
+					break;
+				case 7:
+					doFCFS(original_processes, p_cnt, &results[0]);
+					doSJF(original_processes, p_cnt, &results[1]);
+					doSJF_preemptive(original_processes, p_cnt, &results[2]);
+					doPriority(original_processes, p_cnt, &results[3]);
+					doPriority_preemptive(original_processes, p_cnt, &results[4]);
+					printf("Enter time quantum for RR: ");
+					scanf("%d", &time_quantum);
+					if (time_quantum <= 0) {
+						printf("Invalid time quantum. Using default value %d.\n", DEFAULT_QUANTUM);
+						time_quantum = DEFAULT_QUANTUM;
+					}
+					doRR(original_processes, p_cnt, time_quantum, &results[5]);
+					break;
+				case 8:
+					break;
+				default:
+					printf("Invalid choice. Please try again.\n");
 
+				}
+			}
+		}
+		else if (what == 2) {
+			// 보기 메뉴
+			while (what != 3) {
+				printf("\n--- View ---\n");
+				printf("1. Comparison table\n");
+				printf("2. Gantt chart\n");
+				printf("3. Back to Main Menu\n");
+				printf("Enter: ");
+				scanf("%d", &what);
+				switch (what) {
+				case 1:
+					print_comparison(results, 6);
+					break;
+				case 2:
+					printf("Which? (0=FCFS 1=SJF 2=SJF-P 3=PRI 4=PRI-P 5=RR): ");
+					scanf("%d", &g);
+					if (g >= 0 && g < 6 && results[g].ran)
+						print_gantt_r(&results[g]);
+					else
+						printf("Not run yet or invalid.\n");
+					break;
+				case 3:
+					break;
+				default:
+					printf("Invalid choice. Please try again.\n");
+				}
+			}
+		}
+		else if (what == 0) {
+			printf("Exiting...\n");
+			break;
+		}
+		else {
+			printf("Invalid choice. Please try again.\n");
+		}
 	}
 	return 0;
 }
@@ -861,54 +916,87 @@ PROCESS* heap_pop(PROCESS* HEAP[], int size, int (*compare)(PROCESS*, PROCESS*))
 	return top;
 }
 
-void print_gantt(int gantt[], int total) {
-	printf("=== Gantt Chart ===\n");
-	int t = 0;
-	int pid, start;
-	while (t < total) {
-		pid = gantt[t];
+void print_comparison(RESULT results[], int count) {
+	printf("\n%-22s %12s %12s\n", "Algorithm", "Avg Waiting", "Avg TA");
+	printf("------------------------------------------------\n");
+	int i;
+	for (i = 0; i < count; i++) {
+		if (results[i].ran) {
+			printf("%-22s %12.2f %12.2f\n",
+				results[i].name, results[i].avg_waiting, results[i].avg_turnaround);
+		}
+	}
+}
+
+void print_gantt(RESULT* r) {
+	printf("=== %s Gantt Chart ===\n", r->name);
+	int t = 0, pid, start;
+	while (t < r->gantt_len) {
+		pid = r->gantt[t];
 		start = t;
-		while (t < total && gantt[t] == pid) t++;
-		if (pid == 0)
-			printf("[IDLE %d~%d] ", start, t);
-		else
-			printf("[P%d %d~%d] ", pid, start, t);
+		while (t < r->gantt_len && r->gantt[t] == pid) t++;
+		if (pid == 0) printf("[IDLE %d~%d] ", start, t);
+		else printf("[P%d %d~%d] ", pid, start, t);
 	}
 	printf("\n");
 }
 
-void print_tick(int t, PROCESS* current, PROCESS* rqueue[], int tail, int head, PROCESS* wqueue[], int whead) {
-	printf("t=%3d | ", t);
-	if (current != NULL)
-		printf("CPU: P%d (cpu_used=%d) | ", current->pid, current->cpu_used);
-	else
-		printf("CPU: IDLE            | ");
+void print_gantt_r(RESULT* result) {
+	printf("\n=== %s Gantt Chart ===\n", result->name);
 
-	printf("READY: ");
-	while (tail != head) {
-		printf("P%d ", rqueue[tail]->pid);
-		tail = (tail + 1) % (MAX_PROCESSES + 1);
+	int CELL = 5;   // 칸 너비 (PID 들어갈 공간)
+
+	// 1) 구간 추출: 연속 같은 PID를 하나로 묶어서 임시 배열에 저장
+	int seg_pid[1500];    // 각 구간의 PID
+	int seg_start[1500];  // 각 구간 시작 시간
+	int seg_cnt = 0;
+	int t = 0;
+	int pid, i, j, len, left, right;
+	while (t < result->gantt_len) {
+		pid = result->gantt[t];
+		seg_pid[seg_cnt] = pid;
+		seg_start[seg_cnt] = t;
+		while (t < result->gantt_len && result->gantt[t] == pid) t++;
+		seg_cnt++;
 	}
-	int j;
-	printf("| WAIT: ");
-	for (j = 0; j < whead; j++)
-		printf("P%d ", wqueue[j]->pid);
+	// 마지막 끝 시간 (= gantt_len)도 알아야 함
 
+	// 2) 위 테두리
+	printf(" ");
+	for (i = 0; i < seg_cnt; i++) {
+		for (j = 0; j < CELL; j++) printf("-");
+		printf(" ");   // 칸 사이 공백 (다음 칸 경계)
+	}
 	printf("\n");
-}
 
-void print_result(const char* name, PROCESS* working_processes, int p_cnt) {
-	printf("\n=== %s result ===\n", name);
-	int total_wait = 0, total_turnaround = 0;
-	int j, turnaround, waiting;
-	for (j = 0; j < p_cnt; j++) {
-		turnaround = working_processes[j].completion_time - working_processes[j].arrival_time;
-		waiting = turnaround - working_processes[j].burst_time - working_processes[j].io_total;
-		total_wait += waiting;
-		total_turnaround += turnaround;
-		printf("P%d: completion=%d, turnaround=%d, waiting=%d\n",
-			working_processes[j].pid, working_processes[j].completion_time, turnaround, waiting);
+	// 3) PID 줄
+	printf("|");
+	for (i = 0; i < seg_cnt; i++) {
+		char label[8];
+		if (seg_pid[i] == 0) sprintf(label, "IDLE");
+		else sprintf(label, "P%d", seg_pid[i]);
+		// 가운데 정렬: CELL칸에 label 넣기
+		len = strlen(label);
+		left = (CELL - len) / 2;
+		right = CELL - len - left;
+		for (j = 0; j < left; j++) printf(" ");
+		printf("%s", label);
+		for (j = 0; j < right; j++) printf(" ");
+		printf("|");
 	}
-	printf("Average Waiting Time: %.2f\n", (double)total_wait / p_cnt);
-	printf("Average Turnaround Time: %.2f\n", (double)total_turnaround / p_cnt);
+	printf("\n");
+
+	// 4) 아래 테두리 (위와 동일)
+	printf(" ");
+	for (i = 0; i < seg_cnt; i++) {
+		for (j = 0; j < CELL; j++) printf("-");
+		printf(" ");
+	}
+	printf("\n");
+
+	// 5) 시간 줄: 각 칸 시작 시간을 칸 경계에 맞춰서
+	for (i = 0; i < seg_cnt; i++) {
+		printf("%-*d", CELL + 1, seg_start[i]);   // 시작 시간, 칸+경계 너비만큼
+	}
+	printf("%d\n", result->gantt_len);   // 마지막 끝 시간
 }
