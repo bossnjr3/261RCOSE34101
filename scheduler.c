@@ -31,6 +31,18 @@ typedef struct {
 	STATE state; // 프로세스의 현재 상태
 } PROCESS;
 
+typedef struct {
+	char name[32];
+	double avg_waiting;
+	double avg_turnaround;
+	int gantt[1500];
+	int gantt_len;
+	int p_cnt;                  // 프로세스 수 (상세 출력용)
+	// PROCESS procs[MAX_PROCESSES];  // 프로세스별 결과 (completion/turnaround/waiting 보려고)
+	int ran;                    // 실행 여부 (0/1)
+} RESULT;
+
+
 int random_int(int min, int max) {
 	return rand() % (max - min + 1) + min;
 }
@@ -109,12 +121,12 @@ PROCESS create_process(int pid) {
 }
 void heap_push(PROCESS* HEAP[], int size, PROCESS* p, int (*compare)(PROCESS*, PROCESS*));
 PROCESS* heap_pop(PROCESS* HEAP[], int size, int (*compare)(PROCESS*, PROCESS*));
-void doFCFS(PROCESS *original_processes, int p_cnt);
-void doSJF(PROCESS* original_processes, int p_cnt);
-void doSJF_preemptive(PROCESS* original_processes, int p_cnt);
-void doPriority(PROCESS* original_processes, int p_cnt);
-void doPriority_preemptive(PROCESS* original_processes, int p_cnt);
-void doRR(PROCESS* original_processes, int p_cnt, int time_quantum);
+void doFCFS(PROCESS *original_processes, int p_cnt, RESULT *result);
+void doSJF(PROCESS* original_processes, int p_cnt, RESULT *result);
+void doSJF_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result);
+void doPriority(PROCESS* original_processes, int p_cnt, RESULT *result);
+void doPriority_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result);
+void doRR(PROCESS* original_processes, int p_cnt, int time_quantum, RESULT *result);
 
 void print_gantt(int gantt[], int total);
 void print_tick(int t, PROCESS* current, PROCESS* rqueue[], int tail, int head, PROCESS* wqueue[], int whead);
@@ -136,25 +148,69 @@ int main(void) {
 		}
 		original_processes[i - 1] = p; // 원본 프로세스 배열에 저장
 	}		
+	RESULT results[10]; // 결과 저장용 배열 
+	for (i = 0; i < 10; i++) {
+		results[i].ran = 0;
+	}
 
+	int what = -1;
+	while (what != 0) {
+		printf("\nSelect scheduling algorithm to simulate:\n");
+		printf("1. FCFS\n");
+		printf("2. SJF\n");
+		printf("3. SJF (Preemptive)\n");
+		printf("4. Priority\n");
+		printf("5. Priority (Preemptive)\n");
+		printf("6. RR\n");
+		printf("7. Run All\n");
+		printf("0. Exit\n");
+		printf("Enter your choice: ");
+		scanf("%d", &what);
+		switch (what) {
+			case 1:
+				doFCFS(original_processes, p_cnt, &results[0]);
+				break;
+			case 2:
+				doSJF(original_processes, p_cnt, &results[1]);
+				break;
+			case 3:
+				doSJF_preemptive(original_processes, p_cnt, &results[2]);
+				break;
+			case 4:
+				doPriority(original_processes, p_cnt, &results[3]);
+				break;
+			case 5:
+				doPriority_preemptive(original_processes, p_cnt, &results[4]);
+				break;
+			case 6:
+				doRR(original_processes, p_cnt, 4, &results[5]);
+				break;
+			case 7:
+				doFCFS(original_processes, p_cnt, &results[0]);
+				doSJF(original_processes, p_cnt, &results[1]);
+				doSJF_preemptive(original_processes, p_cnt, &results[2]);
+				doPriority(original_processes, p_cnt, &results[3]);
+				doPriority_preemptive(original_processes, p_cnt, &results[4]);
+				doRR(original_processes, p_cnt, 4, &results[5]);
+				break;
+			case 0:
+				printf("Exiting...\n");
+				break;
+			default:
+				printf("Invalid choice. Please try again.\n");
+		
+		}
 
-	doFCFS(original_processes, p_cnt); // FCFS 스케줄링 시뮬레이션 실행
-	doSJF(original_processes, p_cnt); // SJF 스케줄링 시뮬레이션 실행
-	doSJF_preemptive(original_processes, p_cnt); // SJF Preemptive 스케줄링 시뮬레이션 실행
-	doPriority(original_processes, p_cnt); // Priority 스케줄링 시뮬레이션 실행
-	doPriority_preemptive(original_processes, p_cnt); // Priority Preemptive 스케줄링 시뮬레이션 실행
-	doRR(original_processes, p_cnt, 4); // RR 스케줄링 시뮬레이션 실행
-
+	}
 	return 0;
 }
 
-void doFCFS(PROCESS* original_processes, int p_cnt) {
+void doFCFS(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
-	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
 	int tail = 0; // READY 큐에서 프로세스를 제거할 위치
 	int whead = 0; // WAITING 큐에 새 프로세스를 추가할 위치
@@ -212,10 +268,10 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 			}
 		}
 		if (current_process != NULL) {
-			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+			result->gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
 		}
 		else {
-			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+			result->gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
 		}
 		//print_tick(i, current_process, rqueue, tail, head, wqueue, whead); // 매 tick 상태 출력
 		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING)) {
@@ -225,15 +281,27 @@ void doFCFS(PROCESS* original_processes, int p_cnt) {
 			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
 		}
 	}
-	print_result("FCFS", working_processes, p_cnt); // FCFS 결과 출력
-	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
+	// 평균 계산
+	int total_wait = 0, total_turnaround = 0, turn, wait;
+	for (j = 0; j < p_cnt; j++) {
+		turn = working_processes[j].completion_time - working_processes[j].arrival_time;
+		wait = turn - working_processes[j].burst_time - working_processes[j].io_total;
+		total_wait += wait;
+		total_turnaround += turn;
+	}
+
+	// result에 저장
+	strcpy(result->name, "FCFS");
+	result->avg_waiting = (double)total_wait / p_cnt;
+	result->avg_turnaround = (double)total_turnaround / p_cnt;
+	result->gantt_len = i + 1;
+	result->ran = 1;
 }
 
-void doSJF(PROCESS* original_processes, int p_cnt) {
+void doSJF(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
-	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
@@ -295,10 +363,10 @@ void doSJF(PROCESS* original_processes, int p_cnt) {
 			}
 		}
 		if (current_process != NULL) {
-			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+			result->gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
 		}
 		else {
-			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+			result->gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
 		}
 		//print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
 		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING)) {
@@ -308,16 +376,28 @@ void doSJF(PROCESS* original_processes, int p_cnt) {
 			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
 		}
 	}
-	print_result("SJF", working_processes, p_cnt); // SJF 결과 출력
-	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
+	// 평균 계산
+	int total_wait = 0, total_turnaround = 0, turn, wait;
+	for (j = 0; j < p_cnt; j++) {
+		turn = working_processes[j].completion_time - working_processes[j].arrival_time;
+		wait = turn - working_processes[j].burst_time - working_processes[j].io_total;
+		total_wait += wait;
+		total_turnaround += turn;
+	}
+
+	// result에 저장
+	strcpy(result->name, "SJF");
+	result->avg_waiting = (double)total_wait / p_cnt;
+	result->avg_turnaround = (double)total_turnaround / p_cnt;
+	result->gantt_len = i + 1;
+	result->ran = 1;
 }
 
 
-void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
+void doSJF_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
-	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
@@ -393,10 +473,10 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
 			}
 		}
 		if (current_process != NULL) {
-			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+			result->gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
 		}
 		else {
-			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+			result->gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
 		}
 		//print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
 		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING)) {
@@ -406,15 +486,27 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt) {
 			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
 		}
 	}
-	print_result("SJF Preemptive", working_processes, p_cnt); // SJF Preemptive 결과 출력
-	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
+	// 평균 계산
+	int total_wait = 0, total_turnaround = 0, turn, wait;
+	for (j = 0; j < p_cnt; j++) {
+		turn = working_processes[j].completion_time - working_processes[j].arrival_time;
+		wait = turn - working_processes[j].burst_time - working_processes[j].io_total;
+		total_wait += wait;
+		total_turnaround += turn;
+	}
+
+	// result에 저장
+	strcpy(result->name, "SJF Preemptive");
+	result->avg_waiting = (double)total_wait / p_cnt;
+	result->avg_turnaround = (double)total_turnaround / p_cnt;
+	result->gantt_len = i + 1;
+	result->ran = 1;
 }
 
-void doPriority(PROCESS* original_processes, int p_cnt) {
+void doPriority(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
-	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
@@ -476,10 +568,10 @@ void doPriority(PROCESS* original_processes, int p_cnt) {
 			}
 		}
 		if (current_process != NULL) {
-			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+			result->gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
 		}
 		else {
-			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+			result->gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
 		}
 		//print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
 		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING)) {
@@ -489,15 +581,27 @@ void doPriority(PROCESS* original_processes, int p_cnt) {
 			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
 		}
 	}
-	print_result("Priority", working_processes, p_cnt); // Priority 결과 출력
-	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
+	// 평균 계산
+	int total_wait = 0, total_turnaround = 0, turn, wait;
+	for (j = 0; j < p_cnt; j++) {
+		turn = working_processes[j].completion_time - working_processes[j].arrival_time;
+		wait = turn - working_processes[j].burst_time - working_processes[j].io_total;
+		total_wait += wait;
+		total_turnaround += turn;
+	}
+
+	// result에 저장
+	strcpy(result->name, "Priority");
+	result->avg_waiting = (double)total_wait / p_cnt;
+	result->avg_turnaround = (double)total_turnaround / p_cnt;
+	result->gantt_len = i + 1;
+	result->ran = 1;
 }
 
-void doPriority_preemptive(PROCESS* original_processes, int p_cnt) {
+void doPriority_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
-	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
@@ -573,10 +677,10 @@ void doPriority_preemptive(PROCESS* original_processes, int p_cnt) {
 			}
 		}
 		if (current_process != NULL) {
-			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+			result->gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
 		}
 		else {
-			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+			result->gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
 		}
 		//print_tick(i, current_process, rqueue, 0, head, wqueue, whead); // 매 tick 상태 출력
 		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING)) {
@@ -586,18 +690,30 @@ void doPriority_preemptive(PROCESS* original_processes, int p_cnt) {
 			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
 		}
 	}
-	print_result("Priority Preemptive", working_processes, p_cnt); // Priority Preemptive 결과 출력
-	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
+	// 평균 계산
+	int total_wait = 0, total_turnaround = 0, turn, wait;
+	for (j = 0; j < p_cnt; j++) {
+		turn = working_processes[j].completion_time - working_processes[j].arrival_time;
+		wait = turn - working_processes[j].burst_time - working_processes[j].io_total;
+		total_wait += wait;
+		total_turnaround += turn;
+	}
+
+	// result에 저장
+	strcpy(result->name, "Priority Preemptive");
+	result->avg_waiting = (double)total_wait / p_cnt;
+	result->avg_turnaround = (double)total_turnaround / p_cnt;
+	result->gantt_len = i + 1;
+	result->ran = 1;
 }
 
 
-void doRR(PROCESS* original_processes, int p_cnt, int time_quantum) {
+void doRR(PROCESS* original_processes, int p_cnt, int time_quantum, RESULT *result) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
-	int gantt[1500];   // gantt[t] = 그 tick에 실행된 PID (0이면 IDLE)
 	int head = 0; // 큐에 새 프로세스를 추가할 위치
 	int tail = 0; // READY 큐에서 프로세스를 제거할 위치
 	int whead = 0; // WAITING 큐에 새 프로세스를 추가할 위치
@@ -663,10 +779,10 @@ void doRR(PROCESS* original_processes, int p_cnt, int time_quantum) {
 			}
 		}
 		if (current_process != NULL) {
-			gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+			result->gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
 		}
 		else {
-			gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+			result->gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
 		}
 		//print_tick(i, current_process, rqueue, tail, head, wqueue, whead); // 매 tick 상태 출력
 		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING || current_process->state == READY)) {
@@ -676,8 +792,21 @@ void doRR(PROCESS* original_processes, int p_cnt, int time_quantum) {
 			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
 		}
 	}
-	print_result("RR", working_processes, p_cnt); // RR 결과 출력
-	print_gantt(gantt, i + 1);   // 간트차트 출력 (실제 시뮬레이션이 진행된 시간까지만)
+	// 평균 계산
+	int total_wait = 0, total_turnaround = 0, turn, wait;
+	for (j = 0; j < p_cnt; j++) {
+		turn = working_processes[j].completion_time - working_processes[j].arrival_time;
+		wait = turn - working_processes[j].burst_time - working_processes[j].io_total;
+		total_wait += wait;
+		total_turnaround += turn;
+	}
+
+	// result에 저장
+	strcpy(result->name, "RR");
+	result->avg_waiting = (double)total_wait / p_cnt;
+	result->avg_turnaround = (double)total_turnaround / p_cnt;
+	result->gantt_len = i + 1;
+	result->ran = 1;
 }
 
 
