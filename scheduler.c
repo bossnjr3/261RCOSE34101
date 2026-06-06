@@ -36,6 +36,8 @@ typedef struct {
 	char name[32];
 	double avg_waiting;
 	double avg_turnaround;
+	double cpu_utilization;   
+	double throughput;        
 	int gantt[1500];
 	int gantt_len;
 	int p_cnt;                  // 프로세스 수 (상세 출력용)
@@ -125,8 +127,8 @@ PROCESS* heap_pop(PROCESS* HEAP[], int size, int (*compare)(PROCESS*, PROCESS*))
 void doFCFS(PROCESS *original_processes, int p_cnt, RESULT *result);
 void doSJF(PROCESS* original_processes, int p_cnt, RESULT *result);
 void doSJF_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result);
-void doPriority(PROCESS* original_processes, int p_cnt, RESULT *result);
-void doPriority_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result);
+void doPriority(PROCESS* original_processes, int p_cnt, int aging_on, RESULT *result);
+void doPriority_preemptive(PROCESS* original_processes, int p_cnt, int aging_on, RESULT *result);
 void doRR(PROCESS* original_processes, int p_cnt, int time_quantum, RESULT *result);
 
 void print_comparison(RESULT results[], int count);
@@ -137,7 +139,7 @@ int main(void) {
 	srand((unsigned int)time(NULL)); // 랜덤 시드 초기화
 	int p_cnt = random_int(3, MAX_PROCESSES); // 생성할 프로세스 수를 3에서 MAX_PROCESSES 사이로 랜덤하게 설정
 	int i, j, v, g;
-	int time_quantum;
+	int time_quantum, aging_on;
 	PROCESS original_processes[MAX_PROCESSES];
 	for (i = 1; i <= p_cnt; i++) {
 		PROCESS p = create_process(i); // 프로세스 생성
@@ -185,10 +187,24 @@ int main(void) {
 					doSJF_preemptive(original_processes, p_cnt, &results[2]);
 					break;
 				case 4:
-					doPriority(original_processes, p_cnt, &results[3]);
+					printf("If you want to enable aging, enter 1. Otherwise, enter 0: ");
+					scanf("%d", &aging_on);
+					if (aging_on != 0 && aging_on != 1) {
+						printf("Invalid input. Aging will be disabled.\n");
+						aging_on = 0;
+					}
+					if(aging_on == 0) doPriority(original_processes, p_cnt, aging_on, &results[3]);
+					else doPriority(original_processes, p_cnt, aging_on, &results[4]);
 					break;
 				case 5:
-					doPriority_preemptive(original_processes, p_cnt, &results[4]);
+					printf("If you want to enable aging, enter 1. Otherwise, enter 0: ");
+					scanf("%d", &aging_on);
+					if (aging_on != 0 && aging_on != 1) {
+						printf("Invalid input. Aging will be disabled.\n");
+						aging_on = 0;
+					}
+					if (aging_on == 0) doPriority_preemptive(original_processes, p_cnt, aging_on, &results[5]);
+					else doPriority_preemptive(original_processes, p_cnt, aging_on, &results[6]);
 					break;
 				case 6:
 					printf("Enter time quantum for RR: ");
@@ -197,21 +213,23 @@ int main(void) {
 						printf("Invalid time quantum. Using default value %d.\n", DEFAULT_QUANTUM);
 						time_quantum = DEFAULT_QUANTUM;
 					}
-					doRR(original_processes, p_cnt, time_quantum, &results[5]);
+					doRR(original_processes, p_cnt, time_quantum, &results[7]);
 					break;
 				case 7:
 					doFCFS(original_processes, p_cnt, &results[0]);
 					doSJF(original_processes, p_cnt, &results[1]);
 					doSJF_preemptive(original_processes, p_cnt, &results[2]);
-					doPriority(original_processes, p_cnt, &results[3]);
-					doPriority_preemptive(original_processes, p_cnt, &results[4]);
+					doPriority(original_processes, p_cnt, 0, &results[3]);
+					doPriority(original_processes, p_cnt, 1, &results[4]);
+					doPriority_preemptive(original_processes, p_cnt, 0, &results[5]);
+					doPriority_preemptive(original_processes, p_cnt, 1, &results[6]);
 					printf("Enter time quantum for RR: ");
 					scanf("%d", &time_quantum);
 					if (time_quantum <= 0) {
 						printf("Invalid time quantum. Using default value %d.\n", DEFAULT_QUANTUM);
 						time_quantum = DEFAULT_QUANTUM;
 					}
-					doRR(original_processes, p_cnt, time_quantum, &results[5]);
+					doRR(original_processes, p_cnt, time_quantum, &results[7]);
 					break;
 				case 8:
 					break;
@@ -232,12 +250,12 @@ int main(void) {
 				scanf("%d", &what);
 				switch (what) {
 				case 1:
-					print_comparison(results, 6);
+					print_comparison(results, 8);
 					break;
 				case 2:
-					printf("Which? (0=FCFS 1=SJF 2=SJF-P 3=PRI 4=PRI-P 5=RR): ");
+					printf("Which? (0=FCFS 1=SJF 2=SJF-P 3=PRI 4=PRI-Aging 5=PRI-P 6=PRI-PAging 7=RR): ");
 					scanf("%d", &g);
-					if (g >= 0 && g < 6 && results[g].ran)
+					if (g >= 0 && g < 8 && results[g].ran)
 						print_gantt_r(&results[g]);
 					else
 						printf("Not run yet or invalid.\n");
@@ -344,6 +362,16 @@ void doFCFS(PROCESS* original_processes, int p_cnt, RESULT *result) {
 		total_wait += wait;
 		total_turnaround += turn;
 	}
+	
+	// CPU utilization: gantt에서 IDLE 아닌 tick 세기
+	int busy = 0;
+	for (j = 0; j < i + 1; j++) {     // i+1 = gantt_len
+		if (result->gantt[j] != 0) busy++;
+	}
+	result->cpu_utilization = (double)busy / (i + 1) * 100.0;
+
+	// throughput: 완료 프로세스 수 / 총 시간
+	result->throughput = (double)p_cnt / (i + 1);
 
 	// result에 저장
 	strcpy(result->name, "FCFS");
@@ -439,6 +467,15 @@ void doSJF(PROCESS* original_processes, int p_cnt, RESULT *result) {
 		total_wait += wait;
 		total_turnaround += turn;
 	}
+	// CPU utilization: gantt에서 IDLE 아닌 tick 세기
+	int busy = 0;
+	for (j = 0; j < i + 1; j++) {     // i+1 = gantt_len
+		if (result->gantt[j] != 0) busy++;
+	}
+	result->cpu_utilization = (double)busy / (i + 1) * 100.0;
+
+	// throughput: 완료 프로세스 수 / 총 시간
+	result->throughput = (double)p_cnt / (i + 1);
 
 	// result에 저장
 	strcpy(result->name, "SJF");
@@ -549,6 +586,15 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result) {
 		total_wait += wait;
 		total_turnaround += turn;
 	}
+	// CPU utilization: gantt에서 IDLE 아닌 tick 세기
+	int busy = 0;
+	for (j = 0; j < i + 1; j++) {     // i+1 = gantt_len
+		if (result->gantt[j] != 0) busy++;
+	}
+	result->cpu_utilization = (double)busy / (i + 1) * 100.0;
+
+	// throughput: 완료 프로세스 수 / 총 시간
+	result->throughput = (double)p_cnt / (i + 1);
 
 	// result에 저장
 	strcpy(result->name, "SJF Preemptive");
@@ -558,7 +604,7 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	result->ran = 1;
 }
 
-void doPriority(PROCESS* original_processes, int p_cnt, RESULT *result) {
+void doPriority(PROCESS* original_processes, int p_cnt, int aging_on, RESULT *result) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
@@ -570,6 +616,13 @@ void doPriority(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	int done = 0;
 	PROCESS* current_process = NULL;
 	for (i = 0; i < max_time; i++) {
+		if (aging_on) {
+			if (i % 3 == 0) {   // 매 3 tick마다 READY 큐에 있는 프로세스들의 우선순위 1씩 증가
+				for (j = 0; j < head; j++) {
+					rqueue[j]->priority += 1;
+				}
+			}
+		}
 		// 시뮬레이션 시간 단위마다 프로세스 상태 업데이트 및 스케줄링 로직 구현
 		for (j = 0; j < p_cnt; j++) {
 			if (working_processes[j].arrival_time == i && working_processes[j].state == NEW) {
@@ -578,6 +631,7 @@ void doPriority(PROCESS* original_processes, int p_cnt, RESULT *result) {
 				head++;
 			}
 		}
+		
 		// WAITING 큐 처리
 		for (j = 0; j != whead; j++) {
 			PROCESS* waiting_process = wqueue[j];
@@ -644,16 +698,27 @@ void doPriority(PROCESS* original_processes, int p_cnt, RESULT *result) {
 		total_wait += wait;
 		total_turnaround += turn;
 	}
+	// CPU utilization: gantt에서 IDLE 아닌 tick 세기
+	int busy = 0;
+	for (j = 0; j < i + 1; j++) {     // i+1 = gantt_len
+		if (result->gantt[j] != 0) busy++;
+	}
+	result->cpu_utilization = (double)busy / (i + 1) * 100.0;
+
+	// throughput: 완료 프로세스 수 / 총 시간
+	result->throughput = (double)p_cnt / (i + 1);
 
 	// result에 저장
-	strcpy(result->name, "Priority");
+	if(aging_on) strcpy(result->name, "Priority (Aging)");
+	else strcpy(result->name, "Priority");
+	
 	result->avg_waiting = (double)total_wait / p_cnt;
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
 	result->ran = 1;
 }
 
-void doPriority_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result) {
+void doPriority_preemptive(PROCESS* original_processes, int p_cnt, int aging_on, RESULT *result) {
 	PROCESS working_processes[MAX_PROCESSES];
 	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
@@ -666,6 +731,13 @@ void doPriority_preemptive(PROCESS* original_processes, int p_cnt, RESULT *resul
 	PROCESS* current_process = NULL;
 	PROCESS* compare_process = NULL;
 	for (i = 0; i < max_time; i++) {
+		if (aging_on) {
+			if (i % 3 == 0) {   // 매 3 tick마다 READY 큐에 있는 프로세스들의 우선순위 1씩 증가
+				for (j = 0; j < head; j++) {
+					rqueue[j]->priority += 1;
+				}
+			}
+		}
 		// 시뮬레이션 시간 단위마다 프로세스 상태 업데이트 및 스케줄링 로직 구현
 		for (j = 0; j < p_cnt; j++) {
 			if (working_processes[j].arrival_time == i && working_processes[j].state == NEW) {
@@ -753,9 +825,19 @@ void doPriority_preemptive(PROCESS* original_processes, int p_cnt, RESULT *resul
 		total_wait += wait;
 		total_turnaround += turn;
 	}
+	// CPU utilization: gantt에서 IDLE 아닌 tick 세기
+	int busy = 0;
+	for (j = 0; j < i + 1; j++) {     // i+1 = gantt_len
+		if (result->gantt[j] != 0) busy++;
+	}
+	result->cpu_utilization = (double)busy / (i + 1) * 100.0;
+
+	// throughput: 완료 프로세스 수 / 총 시간
+	result->throughput = (double)p_cnt / (i + 1);
 
 	// result에 저장
-	strcpy(result->name, "Priority Preemptive");
+	if (aging_on) strcpy(result->name, "Priority Preemptive (Aging)");
+	else strcpy(result->name, "Priority Preemptive");
 	result->avg_waiting = (double)total_wait / p_cnt;
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
@@ -855,6 +937,15 @@ void doRR(PROCESS* original_processes, int p_cnt, int time_quantum, RESULT *resu
 		total_wait += wait;
 		total_turnaround += turn;
 	}
+	// CPU utilization: gantt에서 IDLE 아닌 tick 세기
+	int busy = 0;
+	for (j = 0; j < i + 1; j++) {     // i+1 = gantt_len
+		if (result->gantt[j] != 0) busy++;
+	}
+	result->cpu_utilization = (double)busy / (i + 1) * 100.0;
+
+	// throughput: 완료 프로세스 수 / 총 시간
+	result->throughput = (double)p_cnt / (i + 1);
 
 	// result에 저장
 	strcpy(result->name, "RR");
@@ -917,13 +1008,15 @@ PROCESS* heap_pop(PROCESS* HEAP[], int size, int (*compare)(PROCESS*, PROCESS*))
 }
 
 void print_comparison(RESULT results[], int count) {
-	printf("\n%-22s %12s %12s\n", "Algorithm", "Avg Waiting", "Avg TA");
-	printf("------------------------------------------------\n");
+	printf("\n%-28s %12s %10s %8s %12s %10s\n",
+		"Algorithm", "Avg Waiting", "Avg TA", "CPU%", "Throughput", "Makespan");
+	printf("-------------------------------------------------------------------------------------\n");
 	int i;
 	for (i = 0; i < count; i++) {
 		if (results[i].ran) {
-			printf("%-22s %12.2f %12.2f\n",
-				results[i].name, results[i].avg_waiting, results[i].avg_turnaround);
+			printf("%-28s %12.2f %10.2f %8.2f %12.4f %10d\n",
+				results[i].name, results[i].avg_waiting, results[i].avg_turnaround,
+				results[i].cpu_utilization, results[i].throughput, results[i].gantt_len);
 		}
 	}
 }
