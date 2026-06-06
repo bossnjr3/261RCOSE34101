@@ -9,7 +9,7 @@
 #define DEFAULT_QUANTUM 4
 
 typedef enum {
-    NEW,  // 들어온 상태
+    NEW,  // 처음 상태
     READY, // 준비 상태
 	RUNNING, // 현재 실행 중인 상태
 	WAITING, // I/O 대기 상태
@@ -25,7 +25,6 @@ typedef struct {
 	int io_count; // I/O 요청의 수
 	int priority; // 프로세스의 우선순위 (높을수록 높은 우선순위)
 	int cpu_used; // 프로세스가 CPU에서 사용한 시간
-	int waiting_time; // 프로세스가 READY 상태에서 대기한 시간
 	int completion_time; // 프로세스가 종료된 시간
 	int current_io_idx; // 다음에 처리할 I/O 요청의 인덱스
 	int io_total; // 프로세스가 필요로 하는 총 I/O 시간
@@ -41,7 +40,7 @@ typedef struct {
 	int gantt[1500];
 	int gantt_len;
 	int p_cnt;                  // 프로세스 수 (상세 출력용)
-	// PROCESS procs[MAX_PROCESSES];  // 프로세스별 결과 (completion/turnaround/waiting 보려고)
+	PROCESS procs[MAX_PROCESSES];  // 프로세스별 결과 (completion/turnaround/waiting 보려고)
 	int ran;                    // 실행 여부 (0/1)
 } RESULT;
 
@@ -116,7 +115,6 @@ PROCESS create_process(int pid) {
 	}
 	p.priority = random_int(1, 100); // 우선순위를 1에서 100 사이로 랜덤하게 설정
 	p.cpu_used = 0; // 초기에는 CPU를 사용한 시간 0
-	p.waiting_time = 0; // 초기 대기 시간 0
 	p.completion_time = -1; // 초기에는 완료 시간이 설정되지 않음
 	p.current_io_idx = 0; // 다음에 처리할 I/O 요청의 인덱스 초기화
 	p.state = NEW; // 초기 상태는 NEW
@@ -135,11 +133,12 @@ void doLottery(PROCESS* original_processes, int p_cnt, RESULT* result);
 void print_comparison(RESULT results[], int count);
 void print_gantt(RESULT* result);
 void print_gantt_r(RESULT* result);
+void print_detail_compare(RESULT results[], int count);
 
 int main(void) {
 	srand((unsigned int)time(NULL)); // 랜덤 시드 초기화
 	int p_cnt = random_int(3, MAX_PROCESSES); // 생성할 프로세스 수를 3에서 MAX_PROCESSES 사이로 랜덤하게 설정
-	int i, j, v, g;
+	int i, j, g;
 	int time_quantum, aging_on;
 	PROCESS original_processes[MAX_PROCESSES];
 	for (i = 1; i <= p_cnt; i++) {
@@ -251,7 +250,8 @@ int main(void) {
 				printf("\n--- View ---\n");
 				printf("1. Comparison table\n");
 				printf("2. Gantt chart\n");
-				printf("3. Back to Main Menu\n");
+				printf("3. Process Detail\n");
+				printf("4. Back to Main Menu\n");
 				printf("Enter: ");
 				scanf("%d", &what);
 				switch (what) {
@@ -267,6 +267,9 @@ int main(void) {
 						printf("Not run yet or invalid.\n");
 					break;
 				case 3:
+					print_detail_compare(results, 9);
+					break;
+				case 4:
 					break;
 				default:
 					printf("Invalid choice. Please try again.\n");
@@ -385,6 +388,9 @@ void doFCFS(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
 	result->ran = 1;
+	// 프로세스별 결과 저장
+	result->p_cnt = p_cnt;
+	memcpy(result->procs, working_processes, sizeof(PROCESS) * p_cnt);
 }
 
 void doSJF(PROCESS* original_processes, int p_cnt, RESULT *result) {
@@ -489,6 +495,9 @@ void doSJF(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
 	result->ran = 1;
+	// 프로세스별 결과 저장
+	result->p_cnt = p_cnt;
+	memcpy(result->procs, working_processes, sizeof(PROCESS) * p_cnt);
 }
 
 
@@ -603,11 +612,14 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result) {
 	result->throughput = (double)p_cnt / (i + 1);
 
 	// result에 저장
-	strcpy(result->name, "SJF Preemptive");
+	strcpy(result->name, "SJF-P");
 	result->avg_waiting = (double)total_wait / p_cnt;
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
 	result->ran = 1;
+	// 프로세스별 결과 저장
+	result->p_cnt = p_cnt;
+	memcpy(result->procs, working_processes, sizeof(PROCESS)* p_cnt);
 }
 
 void doPriority(PROCESS* original_processes, int p_cnt, int aging_on, RESULT *result) {
@@ -715,13 +727,16 @@ void doPriority(PROCESS* original_processes, int p_cnt, int aging_on, RESULT *re
 	result->throughput = (double)p_cnt / (i + 1);
 
 	// result에 저장
-	if(aging_on) strcpy(result->name, "Priority (Aging)");
-	else strcpy(result->name, "Priority");
+	if(aging_on) strcpy(result->name, "PRI (A)");
+	else strcpy(result->name, "PRI (Non-A)");
 	
 	result->avg_waiting = (double)total_wait / p_cnt;
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
 	result->ran = 1;
+	// 프로세스별 결과 저장
+	result->p_cnt = p_cnt;
+	memcpy(result->procs, working_processes, sizeof(PROCESS)* p_cnt);
 }
 
 void doPriority_preemptive(PROCESS* original_processes, int p_cnt, int aging_on, RESULT *result) {
@@ -842,12 +857,15 @@ void doPriority_preemptive(PROCESS* original_processes, int p_cnt, int aging_on,
 	result->throughput = (double)p_cnt / (i + 1);
 
 	// result에 저장
-	if (aging_on) strcpy(result->name, "Priority Preemptive (Aging)");
-	else strcpy(result->name, "Priority Preemptive");
+	if (aging_on) strcpy(result->name, "PRI-P (A)");
+	else strcpy(result->name, "PRI-P (Non-A)");
 	result->avg_waiting = (double)total_wait / p_cnt;
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
 	result->ran = 1;
+	// 프로세스별 결과 저장
+	result->p_cnt = p_cnt;
+	memcpy(result->procs, working_processes, sizeof(PROCESS)* p_cnt);
 }
 
 
@@ -959,11 +977,14 @@ void doRR(PROCESS* original_processes, int p_cnt, int time_quantum, RESULT *resu
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
 	result->ran = 1;
+	// 프로세스별 결과 저장
+	result->p_cnt = p_cnt;
+	memcpy(result->procs, working_processes, sizeof(PROCESS) * p_cnt);
 }
 
 void doLottery(PROCESS* original_processes, int p_cnt, RESULT* result) {
 	PROCESS working_processes[MAX_PROCESSES];
-	int i, j, k;
+	int i, j;
 	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
 	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
 	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
@@ -1078,6 +1099,9 @@ void doLottery(PROCESS* original_processes, int p_cnt, RESULT* result) {
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
 	result->ran = 1;
+	// 프로세스별 결과 저장
+	result->p_cnt = p_cnt;
+	memcpy(result->procs, working_processes, sizeof(PROCESS)* p_cnt);
 }
 
 
@@ -1217,4 +1241,50 @@ void print_gantt_r(RESULT* result) {
 		printf("%-*d", CELL + 1, seg_start[i]);   // 시작 시간, 칸+경계 너비만큼
 	}
 	printf("%d\n", result->gantt_len);   // 마지막 끝 시간
+}
+
+void print_detail_compare(RESULT results[], int count) {
+	const char* labels[9] = {
+		"FCFS", "SJF", "SJF-P", "PRI", "PRI-A", "PRIP", "PRIP-A", "RR", "LOT"
+	};
+	int a, j, pc = 0;
+	// 프로세스 수 (첫 ran된 result에서)
+	int first = -1;
+	for (a = 0; a < count; a++) if (results[a].ran) { pc = results[a].p_cnt; first = a; break; }
+	if (first < 0) { printf("No results yet.\n"); return; }
+
+	// === Waiting 표 ===
+	printf("\n=== Per-Process Waiting Time ===\n");
+	printf("%-5s", "PID");
+	for (a = 0; a < count; a++)
+		if (results[a].ran) printf("%8s", labels[a]);
+	printf("\n");
+	for (j = 0; j < pc; j++) {
+		printf("P%-4d", results[first].procs[j].pid);
+		for (a = 0; a < count; a++) {
+			if (results[a].ran) {
+				int turn = results[a].procs[j].completion_time - results[a].procs[j].arrival_time;
+				int wait = turn - results[a].procs[j].burst_time - results[a].procs[j].io_total;
+				printf("%8d", wait);
+			}
+		}
+		printf("\n");
+	}
+
+	// === Turnaround 표 ===
+	printf("\n=== Per-Process Turnaround Time ===\n");
+	printf("%-5s", "PID");
+	for (a = 0; a < count; a++)
+		if (results[a].ran) printf("%8s", labels[a]);
+	printf("\n");
+	for (j = 0; j < pc; j++) {
+		printf("P%-4d", results[first].procs[j].pid);
+		for (a = 0; a < count; a++) {
+			if (results[a].ran) {
+				int turn = results[a].procs[j].completion_time - results[a].procs[j].arrival_time;
+				printf("%8d", turn);
+			}
+		}
+		printf("\n");
+	}
 }
