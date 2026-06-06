@@ -114,7 +114,7 @@ PROCESS create_process(int pid) {
 			}
 		}
 	}
-	p.priority = random_int(0, 100); // 우선순위를 1에서 100 사이로 랜덤하게 설정
+	p.priority = random_int(1, 100); // 우선순위를 1에서 100 사이로 랜덤하게 설정
 	p.cpu_used = 0; // 초기에는 CPU를 사용한 시간 0
 	p.waiting_time = 0; // 초기 대기 시간 0
 	p.completion_time = -1; // 초기에는 완료 시간이 설정되지 않음
@@ -130,6 +130,7 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result);
 void doPriority(PROCESS* original_processes, int p_cnt, int aging_on, RESULT *result);
 void doPriority_preemptive(PROCESS* original_processes, int p_cnt, int aging_on, RESULT *result);
 void doRR(PROCESS* original_processes, int p_cnt, int time_quantum, RESULT *result);
+void doLottery(PROCESS* original_processes, int p_cnt, RESULT* result);
 
 void print_comparison(RESULT results[], int count);
 void print_gantt(RESULT* result);
@@ -172,8 +173,9 @@ int main(void) {
 				printf("4. Priority\n");
 				printf("5. Priority (Preemptive)\n");
 				printf("6. RR\n");
-				printf("7. Run All\n");
-				printf("8. Back to Main Menu\n");
+				printf("7. Lottery\n");
+				printf("8. Run All\n");
+				printf("9. Back to Main Menu\n");
 				printf("Enter your choice: ");
 				scanf("%d", &what);
 				switch (what) {
@@ -216,6 +218,9 @@ int main(void) {
 					doRR(original_processes, p_cnt, time_quantum, &results[7]);
 					break;
 				case 7:
+					doLottery(original_processes, p_cnt, &results[8]);
+					break;
+				case 8:
 					doFCFS(original_processes, p_cnt, &results[0]);
 					doSJF(original_processes, p_cnt, &results[1]);
 					doSJF_preemptive(original_processes, p_cnt, &results[2]);
@@ -223,6 +228,7 @@ int main(void) {
 					doPriority(original_processes, p_cnt, 1, &results[4]);
 					doPriority_preemptive(original_processes, p_cnt, 0, &results[5]);
 					doPriority_preemptive(original_processes, p_cnt, 1, &results[6]);
+					doLottery(original_processes, p_cnt, &results[8]);
 					printf("Enter time quantum for RR: ");
 					scanf("%d", &time_quantum);
 					if (time_quantum <= 0) {
@@ -231,7 +237,7 @@ int main(void) {
 					}
 					doRR(original_processes, p_cnt, time_quantum, &results[7]);
 					break;
-				case 8:
+				case 9:
 					break;
 				default:
 					printf("Invalid choice. Please try again.\n");
@@ -250,12 +256,12 @@ int main(void) {
 				scanf("%d", &what);
 				switch (what) {
 				case 1:
-					print_comparison(results, 8);
+					print_comparison(results, 9);
 					break;
 				case 2:
-					printf("Which? (0=FCFS 1=SJF 2=SJF-P 3=PRI 4=PRI-Aging 5=PRI-P 6=PRI-PAging 7=RR): ");
+					printf("Which? (0=FCFS 1=SJF 2=SJF-P 3=PRI 4=PRI-Aging 5=PRI-P 6=PRI-PAging 7=RR 8=Lottery): ");
 					scanf("%d", &g);
-					if (g >= 0 && g < 8 && results[g].ran)
+					if (g >= 0 && g < 9 && results[g].ran)
 						print_gantt_r(&results[g]);
 					else
 						printf("Not run yet or invalid.\n");
@@ -949,6 +955,125 @@ void doRR(PROCESS* original_processes, int p_cnt, int time_quantum, RESULT *resu
 
 	// result에 저장
 	strcpy(result->name, "RR");
+	result->avg_waiting = (double)total_wait / p_cnt;
+	result->avg_turnaround = (double)total_turnaround / p_cnt;
+	result->gantt_len = i + 1;
+	result->ran = 1;
+}
+
+void doLottery(PROCESS* original_processes, int p_cnt, RESULT* result) {
+	PROCESS working_processes[MAX_PROCESSES];
+	int i, j, k;
+	memcpy(working_processes, original_processes, sizeof(PROCESS) * p_cnt); // 작업용 프로세스 배열에 원본 복사
+	PROCESS* rqueue[MAX_PROCESSES + 1]; // READY 상태의 프로세스들을 위한 큐
+	PROCESS* wqueue[MAX_PROCESSES + 1]; // WAITING 상태의 프로세스들을 위한 큐
+	int head = 0; // 큐에 새 프로세스를 추가할 위치
+	int whead = 0; // WAITING 큐에 새 프로세스를 추가할 위치
+	int max_time = 1500; // 시뮬레이션 최대 시간
+	int done = 0;
+	int total, win, sum;
+	PROCESS* current_process = NULL;
+	for (i = 0; i < max_time; i++) {
+		// 시뮬레이션 시간 단위마다 프로세스 상태 업데이트 및 스케줄링 로직 구현
+		for (j = 0; j < p_cnt; j++) {
+			if (working_processes[j].arrival_time == i && working_processes[j].state == NEW) {
+				working_processes[j].state = READY;
+				rqueue[head] = &working_processes[j];
+				head++;
+			}
+		}
+		// WAITING 큐 처리
+		for (j = 0; j != whead; j++) {
+			PROCESS* waiting_process = wqueue[j];
+			waiting_process->io_burst_times[waiting_process->current_io_idx]--;
+			if (waiting_process->io_burst_times[waiting_process->current_io_idx] == 0) {
+				waiting_process->state = READY;
+				waiting_process->current_io_idx++;
+			}
+		}
+		// READY 큐에서 프로세스 선택 (Lottery)
+		if (current_process == NULL && head != 0) {
+			total = 0;
+			for (j = 0; j < head; j++) {
+				total += rqueue[j]->priority;
+			}
+			if (total > 0) {
+				win = rand() % total; // 0부터 total-1까지의 랜덤 숫자 생성
+				sum = 0;
+				for (j = 0; j < head; j++) {
+					sum += rqueue[j]->priority;
+					if (win < sum) { // win이 sum보다 작은 경우 해당 프로세스가 선택됨
+						current_process = rqueue[j];
+						// 선택된 프로세스를 READY 큐에서 제거
+						rqueue[j] = rqueue[head-1]; // 선택된 프로세스 위치에 head 위치의 프로세스 복사]
+						head--;
+						break;
+					}
+				}
+			}
+		}
+		// RUNNING 처리
+		if (current_process != NULL) {
+			current_process->cpu_used++;
+			// I/O 요청
+			// I/O 요청 시점의 context switch 비용이 발생하지 않는다고 가정
+			if (current_process->cpu_used == current_process->burst_time) {
+				current_process->state = TERMINATED;
+				current_process->completion_time = i + 1; // 프로세스가 종료된 시점은 현재 tick이 끝난 시점이므로 i+1로 설정
+				done++;
+			}
+			else if (current_process->current_io_idx < current_process->io_count &&
+				current_process->cpu_used >= current_process->io_request_times[current_process->current_io_idx]) {
+				current_process->state = WAITING;
+				wqueue[whead] = current_process;
+				whead++;
+			}
+		}
+		for (j = 0; j != whead; j++) {
+			PROCESS* waiting_process = wqueue[j];
+			if (waiting_process->state == READY) {
+				rqueue[head] = waiting_process;
+				head++;
+				wqueue[j] = wqueue[whead - 1]; // WAITING 큐에서 제거
+				whead--;
+				j--; // 현재 인덱스에서 다음 프로세스를 확인하기 위해 인덱스 감소
+			}
+		}
+		if (current_process != NULL) {
+			result->gantt[i] = current_process->pid; // 현재 tick에 실행된 프로세스의 PID 기록
+		}
+		else {
+			result->gantt[i] = 0; // CPU가 IDLE 상태인 경우 0으로 기록
+		}
+		//print_tick(i, current_process, rqueue, tail, head, wqueue, whead); // 매 tick 상태 출력
+		if (current_process != NULL && (current_process->state == TERMINATED || current_process->state == WAITING)) {
+			current_process = NULL;
+		}
+		if (done == p_cnt) {
+			break; // 모든 프로세스가 종료되면 시뮬레이션 종료
+		}
+	}
+	// 평균 계산
+	int total_wait = 0, total_turnaround = 0, turn, wait;
+	for (j = 0; j < p_cnt; j++) {
+		turn = working_processes[j].completion_time - working_processes[j].arrival_time;
+		wait = turn - working_processes[j].burst_time - working_processes[j].io_total;
+		total_wait += wait;
+		total_turnaround += turn;
+	}
+
+	// CPU utilization: gantt에서 IDLE 아닌 tick 세기
+	int busy = 0;
+	for (j = 0; j < i + 1; j++) {     // i+1 = gantt_len
+		if (result->gantt[j] != 0) busy++;
+	}
+	result->cpu_utilization = (double)busy / (i + 1) * 100.0;
+
+	// throughput: 완료 프로세스 수 / 총 시간
+	result->throughput = (double)p_cnt / (i + 1);
+
+	// result에 저장
+	strcpy(result->name, "Lottery");
 	result->avg_waiting = (double)total_wait / p_cnt;
 	result->avg_turnaround = (double)total_turnaround / p_cnt;
 	result->gantt_len = i + 1;
