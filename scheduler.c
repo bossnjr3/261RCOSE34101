@@ -164,7 +164,7 @@ int main(void) {
 		printf("0. Exit\n");
 		scanf("%d", &what);
 		if (what == 1) {
-			while (what != 8 && what != 7) {
+			while (what != 8 && what != 9) {
 				printf("\nSelect scheduling algorithm to simulate:\n");
 				printf("1. FCFS\n");
 				printf("2. SJF\n");
@@ -235,6 +235,7 @@ int main(void) {
 						time_quantum = DEFAULT_QUANTUM;
 					}
 					doRR(original_processes, p_cnt, time_quantum, &results[7]);
+					printf("All simulations completed.\n");
 					break;
 				case 9:
 					break;
@@ -246,7 +247,7 @@ int main(void) {
 		}
 		else if (what == 2) {
 			// 보기 메뉴
-			while (what != 3) {
+			while (what != 4) {
 				printf("\n--- View ---\n");
 				printf("1. Comparison table\n");
 				printf("2. Gantt chart\n");
