@@ -44,6 +44,13 @@ typedef struct {
 	int ran;                    // 실행 여부 (0/1)
 } RESULT;
 
+int read_int() {
+	int x;
+	while (scanf("%d", &x) != 1) {
+		while (getchar() != '\n');   // 버퍼 비우기
+	}
+	return x;
+}
 
 int random_int(int min, int max) {
 	return rand() % (max - min + 1) + min;
@@ -162,7 +169,7 @@ int main(void) {
 		printf("1. Run Simulation\n");
 		printf("2. View Results\n");
 		printf("0. Exit\n");
-		scanf("%d", &what);
+		what = read_int();
 		if (what == 1) {
 			while (what != 8 && what != 9) {
 				printf("\nSelect scheduling algorithm to simulate:\n");
@@ -176,7 +183,7 @@ int main(void) {
 				printf("8. Run All\n");
 				printf("9. Back to Main Menu\n");
 				printf("Enter your choice: ");
-				scanf("%d", &what);
+				what = read_int();
 				switch (what) {
 				case 1:
 					doFCFS(original_processes, p_cnt, &results[0]);
@@ -189,7 +196,7 @@ int main(void) {
 					break;
 				case 4:
 					printf("If you want to enable aging, enter 1. Otherwise, enter 0: ");
-					scanf("%d", &aging_on);
+					aging_on = read_int();
 					if (aging_on != 0 && aging_on != 1) {
 						printf("Invalid input. Aging will be disabled.\n");
 						aging_on = 0;
@@ -199,7 +206,7 @@ int main(void) {
 					break;
 				case 5:
 					printf("If you want to enable aging, enter 1. Otherwise, enter 0: ");
-					scanf("%d", &aging_on);
+					aging_on = read_int();
 					if (aging_on != 0 && aging_on != 1) {
 						printf("Invalid input. Aging will be disabled.\n");
 						aging_on = 0;
@@ -209,7 +216,7 @@ int main(void) {
 					break;
 				case 6:
 					printf("Enter time quantum for RR: ");
-					scanf("%d", &time_quantum);
+					time_quantum = read_int();
 					if (time_quantum <= 0) {
 						printf("Invalid time quantum. Using default value %d.\n", DEFAULT_QUANTUM);
 						time_quantum = DEFAULT_QUANTUM;
@@ -229,7 +236,7 @@ int main(void) {
 					doPriority_preemptive(original_processes, p_cnt, 1, &results[6]);
 					doLottery(original_processes, p_cnt, &results[8]);
 					printf("Enter time quantum for RR: ");
-					scanf("%d", &time_quantum);
+					time_quantum = read_int();
 					if (time_quantum <= 0) {
 						printf("Invalid time quantum. Using default value %d.\n", DEFAULT_QUANTUM);
 						time_quantum = DEFAULT_QUANTUM;
@@ -254,14 +261,14 @@ int main(void) {
 				printf("3. Process Detail\n");
 				printf("4. Back to Main Menu\n");
 				printf("Enter: ");
-				scanf("%d", &what);
+				what = read_int();
 				switch (what) {
 				case 1:
 					print_comparison(results, 9);
 					break;
 				case 2:
 					printf("Which? (0=FCFS 1=SJF 2=SJF-P 3=PRI 4=PRI-Aging 5=PRI-P 6=PRI-PAging 7=RR 8=Lottery): ");
-					scanf("%d", &g);
+					g = read_int();
 					if (g >= 0 && g < 9 && results[g].ran)
 						print_gantt_r(&results[g]);
 					else
@@ -543,7 +550,6 @@ void doSJF_preemptive(PROCESS* original_processes, int p_cnt, RESULT *result) {
 		// 현재 실행 중인 프로세스와 READY 큐의 가장 짧은 프로세스 비교
 		else {
 			if (head > 0 && sjf_compare(current_process, rqueue[0]) > 0) {
-				compare_process = rqueue[0]; // READY 큐에서 가장 짧은 프로세스 확인
 				compare_process = heap_pop(rqueue, head, sjf_compare); // READY 큐에서 가장 짧은 프로세스 꺼내기
 				head--;
 				current_process->state = READY;
@@ -788,7 +794,6 @@ void doPriority_preemptive(PROCESS* original_processes, int p_cnt, int aging_on,
 		// 현재 실행 중인 프로세스와 READY 큐의 가장 높은 우선순위 프로세스 비교
 		else {
 			if (head > 0 && priority_compare(current_process, rqueue[0]) > 0) {
-				compare_process = rqueue[0]; // READY 큐에서 가장 짧은 프로세스 확인
 				compare_process = heap_pop(rqueue, head, priority_compare); // READY 큐에서 가장 짧은 프로세스 꺼내기
 				head--;
 				current_process->state = READY;
@@ -1027,7 +1032,8 @@ void doLottery(PROCESS* original_processes, int p_cnt, RESULT* result) {
 					if (win < sum) { // win이 sum보다 작은 경우 해당 프로세스가 선택됨
 						current_process = rqueue[j];
 						// 선택된 프로세스를 READY 큐에서 제거
-						rqueue[j] = rqueue[head-1]; // 선택된 프로세스 위치에 head 위치의 프로세스 복사]
+						rqueue[j] = rqueue[head-1]; // 선택된 프로세스 위치에 head 위치의 프로세스 복사
+						current_process->state = RUNNING;
 						head--;
 						break;
 					}
@@ -1171,30 +1177,20 @@ void print_comparison(RESULT results[], int count) {
 	}
 }
 
-void print_gantt(RESULT* r) {
-	printf("=== %s Gantt Chart ===\n", r->name);
-	int t = 0, pid, start;
-	while (t < r->gantt_len) {
-		pid = r->gantt[t];
-		start = t;
-		while (t < r->gantt_len && r->gantt[t] == pid) t++;
-		if (pid == 0) printf("[IDLE %d~%d] ", start, t);
-		else printf("[P%d %d~%d] ", pid, start, t);
-	}
-	printf("\n");
-}
 
 void print_gantt_r(RESULT* result) {
 	printf("\n=== %s Gantt Chart ===\n", result->name);
 
-	int CELL = 5;   // 칸 너비 (PID 들어갈 공간)
+	int CELL = 5;        // 칸 너비 (PID 들어갈 공간)
+	int PER_LINE = 10;   // 한 줄에 그릴 구간 수 (터미널 폭에 맞춰 조절)
 
 	// 1) 구간 추출: 연속 같은 PID를 하나로 묶어서 임시 배열에 저장
 	int seg_pid[1500];    // 각 구간의 PID
 	int seg_start[1500];  // 각 구간 시작 시간
 	int seg_cnt = 0;
 	int t = 0;
-	int pid, i, j, len, left, right;
+	int pid, len, left, right, end;
+	int i, j, k;
 	while (t < result->gantt_len) {
 		pid = result->gantt[t];
 		seg_pid[seg_cnt] = pid;
@@ -1202,70 +1198,86 @@ void print_gantt_r(RESULT* result) {
 		while (t < result->gantt_len && result->gantt[t] == pid) t++;
 		seg_cnt++;
 	}
-	// 마지막 끝 시간 (= gantt_len)도 알아야 함
 
-	// 2) 위 테두리
-	printf(" ");
-	for (i = 0; i < seg_cnt; i++) {
-		for (j = 0; j < CELL; j++) printf("-");
-		printf(" ");   // 칸 사이 공백 (다음 칸 경계)
-	}
-	printf("\n");
+	// 2) PER_LINE개씩 끊어서 묶음 단위로 출력
+	for (i = 0; i < seg_cnt; i += PER_LINE) {
+		end = i + PER_LINE;            // 이번 묶음의 끝 구간 인덱스
+		if (end > seg_cnt) end = seg_cnt;  // 마지막 묶음은 남은 만큼만
 
-	// 3) PID 줄
-	printf("|");
-	for (i = 0; i < seg_cnt; i++) {
-		char label[8];
-		if (seg_pid[i] == 0) sprintf(label, "IDLE");
-		else sprintf(label, "P%d", seg_pid[i]);
-		// 가운데 정렬: CELL칸에 label 넣기
-		len = strlen(label);
-		left = (CELL - len) / 2;
-		right = CELL - len - left;
-		for (j = 0; j < left; j++) printf(" ");
-		printf("%s", label);
-		for (j = 0; j < right; j++) printf(" ");
-		printf("|");
-	}
-	printf("\n");
-
-	// 4) 아래 테두리 (위와 동일)
-	printf(" ");
-	for (i = 0; i < seg_cnt; i++) {
-		for (j = 0; j < CELL; j++) printf("-");
+		// 위 테두리
 		printf(" ");
-	}
-	printf("\n");
+		for (j = i; j < end; j++) {
+			for (k = 0; k < CELL; k++) printf("-");
+			printf(" ");   // 칸 사이 공백 (다음 칸 경계)
+		}
+		printf("\n");
 
-	// 5) 시간 줄: 각 칸 시작 시간을 칸 경계에 맞춰서
-	for (i = 0; i < seg_cnt; i++) {
-		printf("%-*d", CELL + 1, seg_start[i]);   // 시작 시간, 칸+경계 너비만큼
+		// PID 줄
+		char label[8];
+		printf("|");
+		for (j = i; j < end; j++) {
+			if (seg_pid[j] == 0) sprintf(label, "IDLE");
+			else sprintf(label, "P%d", seg_pid[j]);
+			// 가운데 정렬: CELL칸에 label 넣기
+			len = strlen(label);
+			left = (CELL - len) / 2;
+			right = CELL - len - left;
+			for (k = 0; k < left; k++) printf(" ");
+			printf("%s", label);
+			for (k = 0; k < right; k++) printf(" ");
+			printf("|");
+		}
+		printf("\n");
+
+		// 아래 테두리 (위와 동일)
+		printf(" ");
+		for (j = i; j < end; j++) {
+			for (k = 0; k < CELL; k++) printf("-");
+			printf(" ");
+		}
+		printf("\n");
+
+		// 시간 줄: 각 칸 시작 시간을 칸 경계에 맞춰서
+		for (j = i; j < end; j++) {
+			printf("%-*d", CELL + 1, seg_start[j]);   // 시작 시간, 칸+경계 너비만큼
+		}
+		// 이번 묶음의 끝 시간: 다음 구간 시작 시간, 마지막 묶음이면 gantt_len
+		if (end < seg_cnt) printf("%d\n", seg_start[end]);
+		else printf("%d\n", result->gantt_len);
+
+		printf("\n");   // 묶음 사이 빈 줄로 구분
 	}
-	printf("%d\n", result->gantt_len);   // 마지막 끝 시간
 }
 
 void print_detail_compare(RESULT results[], int count) {
 	const char* labels[9] = {
 		"FCFS", "SJF", "SJF-P", "PRI", "PRI-A", "PRIP", "PRIP-A", "RR", "LOT"
 	};
-	int a, j, pc = 0;
+	int i, j, pc = 0;
 	// 프로세스 수 (첫 ran된 result에서)
 	int first = -1;
-	for (a = 0; a < count; a++) if (results[a].ran) { pc = results[a].p_cnt; first = a; break; }
-	if (first < 0) { printf("No results yet.\n"); return; }
-
+	for (i = 0; i < count; i++) { 
+		if (results[i].ran) { 
+			pc = results[i].p_cnt; first = i; break; 
+		} 
+	}
+	if (first < 0) { 
+		printf("No results yet.\n"); 
+		return; 
+	}
+	int turn, wait;
 	// === Waiting 표 ===
 	printf("\n=== Per-Process Waiting Time ===\n");
 	printf("%-5s", "PID");
-	for (a = 0; a < count; a++)
-		if (results[a].ran) printf("%8s", labels[a]);
+	for (i = 0; i < count; i++)
+		if (results[i].ran) printf("%8s", labels[i]);
 	printf("\n");
 	for (j = 0; j < pc; j++) {
 		printf("P%-4d", results[first].procs[j].pid);
-		for (a = 0; a < count; a++) {
-			if (results[a].ran) {
-				int turn = results[a].procs[j].completion_time - results[a].procs[j].arrival_time;
-				int wait = turn - results[a].procs[j].burst_time - results[a].procs[j].io_total;
+		for (i = 0; i < count; i++) {
+			if (results[i].ran) {
+				turn = results[i].procs[j].completion_time - results[i].procs[j].arrival_time;
+				wait = turn - results[i].procs[j].burst_time - results[i].procs[j].io_total;
 				printf("%8d", wait);
 			}
 		}
@@ -1275,14 +1287,14 @@ void print_detail_compare(RESULT results[], int count) {
 	// === Turnaround 표 ===
 	printf("\n=== Per-Process Turnaround Time ===\n");
 	printf("%-5s", "PID");
-	for (a = 0; a < count; a++)
-		if (results[a].ran) printf("%8s", labels[a]);
+	for (i = 0; i < count; i++)
+		if (results[i].ran) printf("%8s", labels[i]);
 	printf("\n");
 	for (j = 0; j < pc; j++) {
 		printf("P%-4d", results[first].procs[j].pid);
-		for (a = 0; a < count; a++) {
-			if (results[a].ran) {
-				int turn = results[a].procs[j].completion_time - results[a].procs[j].arrival_time;
+		for (i = 0; i < count; i++) {
+			if (results[i].ran) {
+				turn = results[i].procs[j].completion_time - results[i].procs[j].arrival_time;
 				printf("%8d", turn);
 			}
 		}
